@@ -1,4 +1,4 @@
-const sendResponse = (res, status, message, result = null, statusCode = 200, extra = {}) => {
+const sendResponse = (res, status, message, result = [], statusCode = 200, extra = {}) => {
   const response = {
     status,
     message,
@@ -9,7 +9,7 @@ const sendResponse = (res, status, message, result = null, statusCode = 200, ext
   return res.status(statusCode).json(response);
 };
 
-export const sendSuccess = (res, result = {}, message = "Success", extra = {}) => {
+export const sendSuccess = (res, result = [], message = "Success", extra = {}) => {
   return sendResponse(res, true, message, result, 200, extra);
 };
 
@@ -22,7 +22,7 @@ export const sendValidationError = (res, errors, message = "Validation Error") =
 };
 
 export const sendNotFound = (res, message = "Resource not found") => {
-  return sendError(res, message, 404);
+  return sendError(res, message, result = [], 404);
 };
 
 export const sendBadRequest = (res, message = "Bad Request") => {
