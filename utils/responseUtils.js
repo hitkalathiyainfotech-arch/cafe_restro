@@ -1,58 +1,45 @@
-// Base response function
-const sendResponse = (res, isSuccess, message, data = null, statusCode = 200) => {
-  if (isSuccess) {
-    const response = {
-      res: true,
-      message,
-      records: data ?? [],
-    };
-    if (Array.isArray(data)) response.length = data.length;
-    return res.status(statusCode).json(response);
-  } else {
-    return res.status(statusCode).json({
-      res: false,
-      message,
-      error: data?.message || data || "Something went wrong",
-    });
-  }
+// Base response
+const sendResponse = (res, statusCode, success, message, result = []) => {
+  return res.status(statusCode).json({
+    success,
+    message,
+    result: Array.isArray(result) ? result : [result],
+    length: Array.isArray(result) ? result.length : 1
+  });
 };
 
 // Success - 200
-export const sendSuccess = (res, data = [], message = "Success") => {
-  return sendResponse(res, true, message, data, 200);
+export const sendSuccess = (res, message = "Success", result = []) => {
+  return sendResponse(res, 200, true, message, result);
 };
 
-// Validation Error - 422
-export const sendValidationError = (res, errors, message = "Validation Error") => {
-  return sendResponse(res, false, message, errors, 422);
-};
-
-// Not Found - 404
-export const sendNotFound = (res, message = "Resource not found") => {
-  return sendResponse(res, false, message, null, 404);
+// Created - 201
+export const sendCreated = (res, message = "Created successfully", result = []) => {
+  return sendResponse(res, 201, true, message, result);
 };
 
 // Bad Request - 400
 export const sendBadRequest = (res, message = "Bad Request") => {
-  return sendResponse(res, false, message, null, 400);
+  return sendResponse(res, 400, false, message, []);
 };
 
 // Unauthorized - 401
 export const sendUnauthorized = (res, message = "Unauthorized") => {
-  return sendResponse(res, false, message, null, 401);
+  return sendResponse(res, 401, false, message, []);
 };
 
 // Forbidden - 403
 export const sendForbidden = (res, message = "Forbidden") => {
-  return sendResponse(res, false, message, null, 403);
+  return sendResponse(res, 403, false, message, []);
+};
+
+// Not Found - 404
+export const sendNotFound = (res, message = "Resource not found") => {
+  return sendResponse(res, 404, false, message, []);
 };
 
 // Server Error - 500
-export const sendError = (res, error = null, message = "Internal Server Error") => {
-  return sendResponse(res, false, message, error, 500);
-};
-
-// Custom Response - allows custom status code
-export const sendCustom = (res, data, message = "Success", statusCode = 200) => {
-  return sendResponse(res, true, message, data, statusCode);
+export const sendError = (res, message = "Server Error", error = null) => {
+  const result = error ? { error: error.message || error } : [];
+  return sendResponse(res, 500, false, message, result);
 };

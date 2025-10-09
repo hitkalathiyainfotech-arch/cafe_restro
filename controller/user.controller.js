@@ -71,6 +71,57 @@ export const newUserController = async (req, res) => {
   }
 }
 
+export const googleLogin = async (req, res) => {
+  try {
+    const { email, name, avatar } = req.body;
+
+    if (!email || !name) {
+      return sendBadRequest(res, "Name and email are required");
+    }
+
+    // Check if user exists
+    let user = await userModel.findOne({ email });
+    let isNew = false;
+
+    if (user) {
+      log.success(`${user.name} login successful`);
+    } else {
+      // Create new user
+      user = await userModel.create({
+        name,
+        email,
+        avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+        password: "SOCIAL_LOGIN", // placeholder password
+      });
+      await user.save();
+      log.success(`${user.name} account created`);
+      isNew = true; // mark as new user
+    }
+
+    // Generate JWT token
+    const payload = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    };
+    const token = jwt.sign(payload, process.env.JWT_SECET, { expiresIn: "30d" });
+
+    return sendSuccess(
+      res,
+      { user, token },
+      isNew
+        ? "New User Registered Successfully With Google Login"
+        : "Google Registered User Login Successful"
+    );
+
+  } catch (error) {
+    log.error(`Login/Register error: ${error.message}`);
+    return sendError(res, error, `Login/Register error: ${error.message}`);
+  }
+}
+
+
 export const userLoginController = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -123,7 +174,7 @@ export const getUserProfile = async (req, res) => {
     }
 
     // Fetch user data
-    const user = await userModel.findById(_id).select("-password"); // exclude password
+    const user = await userModel.findById(_id).select("-password");
 
     if (!user) {
       return sendBadRequest(res, "User not found");
