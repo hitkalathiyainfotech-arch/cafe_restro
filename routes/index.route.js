@@ -5,9 +5,11 @@ import { UserAuth } from '../middleware/UserAuth.js';
 const indexRouter = express.Router();
 
 //auth section
-indexRouter.post("/new/user", newUserController)
-indexRouter.post("/user/login", userLoginController)
-indexRouter.post("/googleLogin",googleLogin)
+indexRouter.post("/new/user", newUserController);
+indexRouter.post("/user/login", userLoginController);
+indexRouter.post("/googleLogin", googleLogin);
+//forget password
+indexRouter.post("/send-otp",ForgotOtpSendController)
 
 //profile section
 indexRouter.get("/user/profile", UserAuth, getUserProfile)

@@ -1,8 +1,9 @@
 import userModel from "../model/user.model.js";
 import log from "../utils/logger.js"
-import { sendBadRequest, sendError, sendSuccess } from "../utils/responseUtils.js";
+import { sendBadRequest, sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
 import jwt from 'jsonwebtoken';
 import bcrypt from "bcryptjs";
+import transporter from "../utils/Email.config.js";
 
 export const newUserController = async (req, res) => {
   try {
@@ -186,3 +187,32 @@ export const getUserProfile = async (req, res) => {
     return sendError(res, error, `Error fetching user profile: ${error.message}`);
   }
 };
+
+export const ForgotOtpSendController = async (req, res) => {
+  try {
+    const { email } = req?.body;
+    if (!email) {
+      return sendBadRequest(res, "email is required");
+    }
+
+    const user = await userModel.findOne({ email: email });
+    if (user) {
+      return sendNotFound(res, `${user.name} Not Found`);
+    }
+
+    try {
+      await transporter.sendMail({
+        from: process.env.SMTP_EMAIL,
+        to: String(email).toLowerCase().trim(),
+        subject: "Cafe & Restro App Forget Password"
+      })
+    } catch (error) {
+      log.error(`Transporter email send error`);
+      return sendError(res, "Transporter Email Send");
+    }
+
+  } catch (error) {
+    log.error(`Error While Send Forget OTP : ${error.message}`)
+    return sendError(res, `Error While Send Forget OTP : ${error.message}`, error);
+  }
+}
