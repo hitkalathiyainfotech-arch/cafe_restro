@@ -4,10 +4,7 @@ import { config } from 'dotenv'; config();
 const transporter = nodemailer.createTransport({
     host: "sandbox.smtp.mailtrap.io",
     port: 2525,
-    secure: false
-    
-    
-    ,
+    secure: false,
     pool: true,
     auth: {
         user: process.env.SMTP_EMAIL || '369d1afccc70ab',

@@ -1,17 +1,16 @@
 import express from 'express';
-import { getUserProfile, googleLogin, newUserController, userLoginController } from '../controller/user.controller.js';
+import { ForgotOtpSend, getUserProfile, googleLogin, newUserRegister, userLogin } from '../controller/user.controller.js';
 import { UserAuth } from '../middleware/UserAuth.js';
 
 const indexRouter = express.Router();
 
 //auth section
-indexRouter.post("/new/user", newUserController);
-indexRouter.post("/user/login", userLoginController);
-indexRouter.post("/googleLogin", googleLogin);
-//forget password
-indexRouter.post("/send-otp",ForgotOtpSendController)
+indexRouter.post("userRegister", newUserRegister);
+indexRouter.post("userLogin", userLogin);
+indexRouter.post("googleLogin", googleLogin);
+indexRouter.post("forgotOtp", ForgotOtpSend)
 
 //profile section
-indexRouter.get("/user/profile", UserAuth, getUserProfile)
+indexRouter.get("userProfile", UserAuth, getUserProfile)
 
 export default indexRouter;

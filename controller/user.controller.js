@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from "bcryptjs";
 import transporter from "../utils/Email.config.js";
 
-export const newUserController = async (req, res) => {
+export const newUserRegister = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -122,8 +122,7 @@ export const googleLogin = async (req, res) => {
   }
 }
 
-
-export const userLoginController = async (req, res) => {
+export const userLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -160,35 +159,10 @@ export const userLoginController = async (req, res) => {
     log.error(`Error During Login: ${error.message}`);
     return sendError(res, error, `Error During Login: ${error.message}`);
   }
-
+  
 }
 
-
-//profile section controller
-
-export const getUserProfile = async (req, res) => {
-  try {
-    const { _id } = req?.user;
-
-    if (!_id) {
-      return sendBadRequest(res, "User not authenticated");
-    }
-
-    // Fetch user data
-    const user = await userModel.findById(_id).select("-password");
-
-    if (!user) {
-      return sendBadRequest(res, "User not found");
-    }
-
-    return sendSuccess(res, { user }, "User profile fetched successfully");
-  } catch (error) {
-    log.error(`Error fetching user profile: ${error.message}`);
-    return sendError(res, error, `Error fetching user profile: ${error.message}`);
-  }
-};
-
-export const ForgotOtpSendController = async (req, res) => {
+export const ForgotOtpSend = async (req, res) => {
   try {
     const { email } = req?.body;
     if (!email) {
@@ -216,3 +190,26 @@ export const ForgotOtpSendController = async (req, res) => {
     return sendError(res, `Error While Send Forget OTP : ${error.message}`, error);
   }
 }
+//profile section controller
+
+export const getUserProfile = async (req, res) => {
+  try {
+    const { _id } = req?.user;
+
+    if (!_id) {
+      return sendBadRequest(res, "User not authenticated");
+    }
+
+    // Fetch user data
+    const user = await userModel.findById(_id).select("-password");
+
+    if (!user) {
+      return sendBadRequest(res, "User not found");
+    }
+
+    return sendSuccess(res, { user }, "User profile fetched successfully");
+  } catch (error) {
+    log.error(`Error fetching user profile: ${error.message}`);
+    return sendError(res, error, `Error fetching user profile: ${error.message}`);
+  }
+};
