@@ -23,7 +23,7 @@ app.get("/", async (req, res) => {
   return res.send("<h2>congratulations Cafe & Restro Api's Is Woring </h2>")
 });
 
-app.use("/api/", indexRouter);
+app.use("/api", indexRouter);
 
 app.listen(PORT, (err) => {
   if (err) {

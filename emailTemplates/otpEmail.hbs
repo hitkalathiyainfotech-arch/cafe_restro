@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your OTP Code</title>
+</head>
+
+<body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 30px;">
+  <table align="center" width="600" style="background: #ffffff; border-radius: 10px; padding: 20px;">
+    <tr>
+      <td align="center">
+        <h2 style="color:#161a39;">Password Reset Verification</h2>
+        <p style="font-size:16px; color:#333;">
+          Hi {{name}},
+        </p>
+        <p style="font-size:16px; color:#333;">
+          We received a request to reset your password. Please use the OTP below to verify your request:
+        </p>
+        <h1
+          style="background:#161a39; color:#fff; display:inline-block; padding:10px 20px; border-radius:5px; letter-spacing:4px;">
+          {{otp}}
+        </h1>
+        <p style="font-size:14px; color:#666; margin-top:20px;">
+          This OTP will expire in 10 minutes. If you didn’t request this, you can safely ignore this email.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+
+</html>

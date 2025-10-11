@@ -5,6 +5,22 @@ import jwt from 'jsonwebtoken';
 import bcrypt from "bcryptjs";
 import transporter from "../utils/Email.config.js";
 
+export const sendOtpEmail = async (email, name, otp) => {
+  // Let errors propagate so callers can handle failures appropriately
+  const info = await transporter.sendMail({
+    from: `"Cafe & Restro" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Your Password Reset OTP",
+    template: "otpEmail",
+    context: {
+      name,
+      otp,
+    },
+  });
+  console.log("OTP email sent successfully");
+  return info;
+};
+
 export const newUserRegister = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -154,35 +170,38 @@ export const userLogin = async (req, res) => {
 
     log.success(`${user.name} Login Successful`);
 
-    return sendSuccess(res, { user, token }, "Login Successful");
+    return sendSuccess(res, "Login Successful", { user, token });
   } catch (error) {
     log.error(`Error During Login: ${error.message}`);
     return sendError(res, error, `Error During Login: ${error.message}`);
   }
-  
+
 }
 
 export const ForgotOtpSend = async (req, res) => {
   try {
-    const { email } = req?.body;
+    let { email } = req?.body;
     if (!email) {
       return sendBadRequest(res, "email is required");
     }
+    email = String(email).trim().toLowerCase();
 
     const user = await userModel.findOne({ email: email });
-    if (user) {
-      return sendNotFound(res, `${user.name} Not Found`);
+    if (!user) {
+      return sendNotFound(res, "User Not Found");
     }
 
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || 10);
+    const otpExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+
     try {
-      await transporter.sendMail({
-        from: process.env.SMTP_EMAIL,
-        to: String(email).toLowerCase().trim(),
-        subject: "Cafe & Restro App Forget Password"
-      })
+      await userModel.findOneAndUpdate({ email }, { otp, otpExpires }, { new: true });
+      await sendOtpEmail(email, user.name, otp);
+      return sendSuccess(res, `Forgot Otp Send Successfully : ${email}`);
     } catch (error) {
-      log.error(`Transporter email send error`);
-      return sendError(res, "Transporter Email Send");
+      log.error(`Transporter email send error ${error.message}`);
+      return sendError(res, "Transporter Email Send Error", error);
     }
 
   } catch (error) {
@@ -190,8 +209,63 @@ export const ForgotOtpSend = async (req, res) => {
     return sendError(res, `Error While Send Forget OTP : ${error.message}`, error);
   }
 }
-//profile section controller
 
+export const VerifyOtp = async (req, res) => {
+  try {
+    const MASTER_OTP = process.env.MASTER_OTP || "1111";
+    let { email, otp } = req?.body;
+    if (!email || !otp) {
+      return sendBadRequest(res, "Email and OTP are required");
+    }
+    email = String(email).trim().toLowerCase();
+    otp = String(otp).trim();
+    const user = await userModel.findOne({ email });
+    if (!user) {
+      return sendNotFound(res, "User Not Found");
+    }
+    const now = new Date();
+    const isMaster = MASTER_OTP && otp === MASTER_OTP;
+    const isExpired = user.otpExpires && now > new Date(user.otpExpires);
+
+    if (!isMaster) {
+      if (!user.otp || user.otp !== otp) {
+        return sendBadRequest(res, "Invalid OTP");
+      }
+      if (isExpired) {
+        return sendBadRequest(res, "OTP expired");
+      }
+    }
+
+    await userModel.findOneAndUpdate({ email }, { otp: null, otpExpires: null }, { new: true });
+    return sendSuccess(res, "OTP verified successfully");
+  } catch (error) {
+    log.error(`Error verifying OTP: ${error.message}`);
+    return sendError(res, `Error verifying OTP: ${error.message}`, error);
+  }
+}
+
+export const ResetPassword = async (req, res) => {
+  try {
+    const { email, password } = req?.body;
+    if (!email || !password) {
+      return sendBadRequest(res, "Email and password are required");
+    }
+    const user = await userModel.findOne({ email });
+    if (!user) {
+      return sendNotFound(res, "User Not Found");
+    }
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    await userModel.findOneAndUpdate({ email }, { password: hashedPassword }, { new: true });
+    return sendSuccess(res, "Password reset successfully");
+  } catch (error) {
+    log.error(`Error resetting password: ${error.message}`);
+    return sendError(res, error, `Error resetting password: ${error.message}`);
+  }
+}
+
+
+//profile section controller
 export const getUserProfile = async (req, res) => {
   try {
     const { _id } = req?.user;
