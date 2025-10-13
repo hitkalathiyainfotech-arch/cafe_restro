@@ -1,12 +1,22 @@
 import mongoose from "mongoose";
 
 const roomSchema = new mongoose.Schema({
-  type: { type: String, required: true }, // e.g., Deluxe, Suite, Standard
+  type: { type: String, required: true },
   pricePerNight: { type: Number, required: true },
   maxGuests: { type: Number, required: true },
-  amenities: [{ type: String }], // e.g., ["Wi-Fi", "AC", "TV"]
+  amenities: [{ type: String }],
   images: [{ type: String }],
 });
+
+const reviewSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Types.ObjectId, ref: "User" },
+    admin: { type: mongoose.Types.ObjectId, ref: "Admin" },
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    comment: { type: String },
+  },
+  { timestamps: true }
+);
 
 const hotelSchema = new mongoose.Schema(
   {
@@ -15,7 +25,7 @@ const hotelSchema = new mongoose.Schema(
     admin: {
       type: mongoose.Types.ObjectId,
       ref: "Admin",
-      default: null
+      default: null,
     },
     address: {
       street: String,
@@ -28,8 +38,6 @@ const hotelSchema = new mongoose.Schema(
       lat: Number,
       lng: Number,
     },
-    rating: { type: Number, default: 0 },
-    totalReviews: { type: Number, default: 0 },
     images: [{ type: String }],
     rooms: [roomSchema],
     amenities: [{ type: String }],
@@ -37,8 +45,15 @@ const hotelSchema = new mongoose.Schema(
       min: Number,
       max: Number,
     },
+    Rent: {
+      type: Number,
+      default: null
+    },
+    rating: { type: Number, default: 0 },
+    totalReviews: { type: Number, default: 0 },
+    reviews: [reviewSchema],
   },
   { timestamps: true }
 );
 
-export default mongoose.model("Hotel", hotelSchema);
+export default mongoose.model("Hotel", hotelSchema);  
