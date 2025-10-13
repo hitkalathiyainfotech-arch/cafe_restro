@@ -10,11 +10,9 @@ export const createNewHotel = async (req, res) => {
 
     if (!name) return sendBadRequest(res, "Hotel name is required");
 
-    // 1️⃣ Separate hotel and room images safely
     const hotelImagesFiles = Array.isArray(req.files?.hotelImages) ? req.files.hotelImages : [];
     const roomImagesFiles = Array.isArray(req.files?.roomImages) ? req.files.roomImages : [];
 
-    // 2️⃣ Upload hotel images once
     const hotelImages = [];
     for (const file of hotelImagesFiles) {
       if (file && file.buffer) {
@@ -23,7 +21,6 @@ export const createNewHotel = async (req, res) => {
       }
     }
 
-    // 3️⃣ Parse rooms JSON safely
     let parsedRooms = [];
     if (rooms) {
       parsedRooms = typeof rooms === "string" ? JSON.parse(rooms) : rooms;
@@ -41,7 +38,7 @@ export const createNewHotel = async (req, res) => {
       );
     }
 
-    // 4️⃣ Create hotel document in MongoDB
+
     const hotel = new hotelModel({
       name,
       description,

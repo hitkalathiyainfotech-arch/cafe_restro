@@ -8,6 +8,7 @@ import { handleMulterErrors, processAndUploadImages, uploadFiles } from '../midd
 import { createBooking, getMyHotelBookings, hotelAdminBookings, previewBooking, updateHotelBookingStatus, } from '../controller/hotel.booking.controller.js';
 import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
 import log from '../utils/logger.js'
+import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
 
 const indexRouter = express.Router();
 
@@ -44,7 +45,13 @@ indexRouter.get("/hotel/MyBookings", UserAuth, getMyHotelBookings);
 indexRouter.get("/HotelAdminBookings", AdminAuth, hotelAdminBookings);
 indexRouter.patch("/hotel/statusUpdate/:bookingId", AdminAuth, updateHotelBookingStatus);
 
+//watchlist
+indexRouter.post("/addToWatchlist", UserAuth, addToWatchlist);
+indexRouter.get("/getWatchlist", UserAuth, getMyWatchlist);
+indexRouter.delete("/removeFromWatchlist", UserAuth, removeWatchlistItem);
 
+//cafe booking & list section
+// indexRouter.post("/createCafe", UserAuth, createNewCafe);
 
 //all list out of S3 images
 indexRouter.get("/s3/list", async (req, res) => {
