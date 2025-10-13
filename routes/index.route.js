@@ -5,6 +5,7 @@ import { adminLogin, adminUpdate, deleteAdmin, getAdminById, getAllAdmins, newAd
 import { AdminAuth } from '../middleware/AdminAuth.js';
 import { createNewHotel } from '../controller/hotel.controller.js';
 import { handleMulterErrors, normalizeRoomImages, uploadFiles } from '../middleware/multer.middleware.js';
+import { createBooking, previewBooking } from '../controller/hotel.booking.controller.js';
 
 const indexRouter = express.Router();
 
@@ -29,14 +30,14 @@ indexRouter.delete("/deleteAdmin/:adminId", deleteAdmin);
 
 //hotel section
 indexRouter.post("/createNewHotel", AdminAuth, uploadFiles, normalizeRoomImages, handleMulterErrors, createNewHotel);
-
-
-
 // indexRouter.get("/getAllHotels", AdminAuth, getAllHotels);
 // indexRouter.get("/getHotelById", getHotelById);
 // indexRouter.patch("/updateHotel", updateHotel);
 // indexRouter.delete("/deleteHotel", deleteHotels);
 
+//hotel. booking section
+indexRouter.post("/hotel/createBooking/:hotelId", UserAuth, createBooking);
+indexRouter.post("/hotel/previewBooking/:hotelId", UserAuth, previewBooking);
 
 
 export default indexRouter;

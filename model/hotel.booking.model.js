@@ -49,9 +49,7 @@ const hotelBookingSchema = new mongoose.Schema(
     },
 
     payment: {
-      paymentId: { type: String, default: "" }, // Razorpay payment id
-      orderId: { type: String, default: "" }, // Razorpay order id
-      signature: { type: String, default: "" },
+      transactionId: { type: String, default: "" }, // Razorpay payment id
       paymentStatus: {
         type: String,
         enum: ["pending", "completed", "failed", "refunded"],
