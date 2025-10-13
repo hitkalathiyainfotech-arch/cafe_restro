@@ -22,7 +22,7 @@ const hotelSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     description: String,
-    admin: {
+    adminId: {
       type: mongoose.Types.ObjectId,
       ref: "Admin",
       default: null,

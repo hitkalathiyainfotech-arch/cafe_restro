@@ -13,14 +13,22 @@ const hotelBookingSchema = new mongoose.Schema(
 
     bookingStatus: {
       type: String,
-      enum: ["pending", "confirmed", "cancelled", "completed", "failed"],
+      enum: ["Upcoming", "Completed", "Cancelled", "refunded"],
       default: "pending",
     },
-
-    guestId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    adminId: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", required: true },
+    guest: {
+      isMySelf: { type: Boolean, default: true },
+      name: { type: String, default: "" },
+      email: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      address: { type: String, default: "" },
+      state: { type: String, default: "" },
+      country: { type: String, default: "" },
+    },
 
     hotelId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
-    roomId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel.rooms", required: true },
+    roomId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
 
     bookingDates: {
       checkInDate: { type: Date, required: true },
@@ -49,17 +57,17 @@ const hotelBookingSchema = new mongoose.Schema(
     },
 
     payment: {
-      transactionId: { type: String, default: "" }, // Razorpay payment id
+      transactionId: { type: String, default: "" },
       paymentStatus: {
         type: String,
-        enum: ["pending", "completed", "failed", "refunded"],
+        enum: ["pending", "confirmed", "cancelled", "completed", "failed"],
         default: "pending",
       },
       paymentMethod: { type: String, default: "" },
       paymentDate: { type: Date },
     },
 
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );

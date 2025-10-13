@@ -3,9 +3,11 @@ import { ForgotOtpSend, ResetPassword, VerifyOtp, getUserProfile, googleLogin, n
 import { UserAuth } from '../middleware/UserAuth.js';
 import { adminLogin, adminUpdate, deleteAdmin, getAdminById, getAllAdmins, newAdminRegister } from '../controller/admin.controller.js';
 import { AdminAuth } from '../middleware/AdminAuth.js';
-import { createNewHotel } from '../controller/hotel.controller.js';
-import { handleMulterErrors, normalizeRoomImages, uploadFiles } from '../middleware/multer.middleware.js';
-import { createBooking, previewBooking } from '../controller/hotel.booking.controller.js';
+import { createNewHotel, deleteHotels, getAllHotels, getHotelById } from '../controller/hotel.controller.js';
+import { handleMulterErrors, processAndUploadImages, uploadFiles } from '../middleware/multer.middleware.js';
+import { createBooking, getMyHotelBookings, hotelAdminBookings, previewBooking, updateHotelBookingStatus, } from '../controller/hotel.booking.controller.js';
+import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
+import log from '../utils/logger.js'
 
 const indexRouter = express.Router();
 
@@ -29,15 +31,48 @@ indexRouter.patch("/adminUpdate/:adminId", adminUpdate);
 indexRouter.delete("/deleteAdmin/:adminId", deleteAdmin);
 
 //hotel section
-indexRouter.post("/createNewHotel", AdminAuth, uploadFiles, normalizeRoomImages, handleMulterErrors, createNewHotel);
-// indexRouter.get("/getAllHotels", AdminAuth, getAllHotels);
-// indexRouter.get("/getHotelById", getHotelById);
-// indexRouter.patch("/updateHotel", updateHotel);
-// indexRouter.delete("/deleteHotel", deleteHotels);
+indexRouter.post("/createNewHotel", AdminAuth, uploadFiles, processAndUploadImages, handleMulterErrors, createNewHotel);
+indexRouter.get("/getAllHotels", AdminAuth, getAllHotels);
+indexRouter.get("/getHotelById/:hotelId", getHotelById);
+// indexRouter.patch("/updateHotel",AdminAuth, updateHotel);
+indexRouter.delete("/deleteHotel/:hotelId", AdminAuth, deleteHotels);
 
 //hotel. booking section
 indexRouter.post("/hotel/createBooking/:hotelId", UserAuth, createBooking);
 indexRouter.post("/hotel/previewBooking/:hotelId", UserAuth, previewBooking);
+indexRouter.get("/hotel/MyBookings", UserAuth, getMyHotelBookings);
+indexRouter.get("/HotelAdminBookings", AdminAuth, hotelAdminBookings);
+indexRouter.patch("/hotel/statusUpdate/:bookingId", AdminAuth, updateHotelBookingStatus);
 
+
+
+//all list out of S3 images
+indexRouter.get("/s3/list", async (req, res) => {
+  try {
+    const allUrls = await listAllS3Images();
+    return res.status(200).json({ message: "S3 images listed successfully", total: allUrls.length, images: allUrls });
+  } catch (error) {
+    log.error("List S3 Images Error:" + error.message);
+    return res.status(500).json({ message: "Failed to list S3 images", error });
+  }
+});
+
+//delete image from S3
+indexRouter.delete("/s3/delete", async (req, res) => {
+  const { imageUrl } = req.body;
+  if (!imageUrl) {
+    return res.status(400).json({ message: "Image URL is required" });
+  }
+  try {
+    const key = imageUrl.split(".amazonaws.com/")[1];
+    await deleteFromS3(key);
+    return res.status(200).json({ message: "Image deleted successfully from S3", imageUrl });
+  }
+  catch (error) {
+    log.error("Delete S3 Image Error:" + error.message);
+    return res.status(500).json({ message: "Failed to delete image from S3", error });
+  }
+});
 
 export default indexRouter;
+

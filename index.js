@@ -17,6 +17,7 @@ connectDB(DB_URL);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"))
+app.use(cors());
 
 //home route
 app.get("/", async (req, res) => {
@@ -30,4 +31,4 @@ app.listen(PORT, (err) => {
     console.error("Error During Port Listen!!");
   }
   log.success(`Application Running Successfull On PORT : ${PORT}`);
-})
+});
