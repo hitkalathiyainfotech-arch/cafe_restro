@@ -9,6 +9,7 @@ import { createBooking, getMyHotelBookings, hotelAdminBookings, previewBooking, 
 import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
 import log from '../utils/logger.js'
 import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
+import { createNewCafe } from '../controller/cafe.controller.js';
 
 const indexRouter = express.Router();
 
@@ -51,7 +52,7 @@ indexRouter.get("/getWatchlist", UserAuth, getMyWatchlist);
 indexRouter.delete("/removeFromWatchlist", UserAuth, removeWatchlistItem);
 
 //cafe booking & list section
-// indexRouter.post("/createCafe", UserAuth, createNewCafe);
+indexRouter.post("/createCafe", UserAuth, upload.array("images", 10), createNewCafe);
 
 //all list out of S3 images
 indexRouter.get("/s3/list", async (req, res) => {

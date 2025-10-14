@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 const CafeSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String },
@@ -11,11 +13,11 @@ const CafeSchema = new mongoose.Schema({
       lng: { type: Number }
     }
   },
-  themeCategory: [{
+  themeCategory: {
     image: { type: String, default: null },
     name: { type: String, default: null }
   }
-  ],
+  ,
   images: [{ type: String }],
   rating: { type: Number, default: 0 },
   popular: { type: Boolean, default: false },
@@ -27,3 +29,6 @@ const CafeSchema = new mongoose.Schema({
   },
   createdAt: { type: Date, default: Date.now }
 });
+
+const cafeModel = mongoose.model("Cafe", CafeSchema);
+export default cafeModel;
