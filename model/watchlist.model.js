@@ -16,7 +16,7 @@ const watchlistSchema = new mongoose.Schema({
   cafe: [
     {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Cafe",
+      ref: "Cafes",
       default: null
     },
   ],

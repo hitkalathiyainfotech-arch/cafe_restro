@@ -5,29 +5,24 @@ import { sendError, sendSuccess } from "../utils/responseUtils.js";
 export const addToWatchlist = async (req, res) => {
   try {
     const { hotel, cafe, restro } = req.query;
-    const userId = req.user?._id; // from auth middleware
+    const userId = req.user?._id;
 
     if (!hotel && !cafe && !restro) {
-      return res.status(400).json({ success: false, message: "At least one item (hotel, cafe, restro) is required" });
+      return res.status(400).json({
+        success: false,
+        message: "At least one item (hotel, cafe, restro) is required",
+      });
     }
 
-    // Build update object dynamically
-    const update = {};
-    if (hotel) update.$addToSet = { hotels: hotel };
-    if (cafe) {
-      update.$addToSet = update.$addToSet || {};
-      update.$addToSet.cafes = cafe;
-    }
-    if (restro) {
-      update.$addToSet = update.$addToSet || {};
-      update.$addToSet.restros = restro;
-    }
+    const addToSet = {};
+    if (hotel) addToSet.hotels = hotel;
+    if (cafe) addToSet.cafe = cafe;
+    if (restro) addToSet.restro = restro;
 
-    // Find existing watchlist or create new one
     const watchlist = await watchListModel.findOneAndUpdate(
       { userId },
-      update,
-      { new: true, upsert: true } // upsert: create if not exists, new: return updated doc
+      { $addToSet: addToSet },
+      { new: true, upsert: true }
     );
 
     return sendSuccess(res, "Watchlist updated successfully", watchlist);
@@ -37,10 +32,12 @@ export const addToWatchlist = async (req, res) => {
   }
 };
 
+
+
 export const getMyWatchlist = async (req, res) => {
   try {
     const userId = req.user?._id;
-    const watchlist = await watchListModel.findOne({ userId }).populate("userId hotels"); // in fututre add cafe restro for popluate - hit
+    const watchlist = await watchListModel.findOne({ userId }).populate("userId hotels cafe"); // in fututre add cafe restro for popluate - hit
 
     if (!watchlist) {
       return sendSuccess(res, "No watchlist found", { hotels: [], cafes: [], restros: [] });
@@ -66,11 +63,11 @@ export const removeWatchlistItem = async (req, res) => {
     if (hotel) update.$pull = { hotels: hotel };
     if (cafe) {
       update.$pull = update.$pull || {};
-      update.$pull.cafes = cafe;
+      update.$pull.cafe = cafe;
     }
     if (restro) {
       update.$pull = update.$pull || {};
-      update.$pull.restros = restro;
+      update.$pull.restro = restro;
     }
 
     // Update the user's watchlist

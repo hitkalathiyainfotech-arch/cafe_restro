@@ -9,7 +9,8 @@ import { createBooking, getMyHotelBookings, hotelAdminBookings, previewBooking, 
 import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
 import log from '../utils/logger.js'
 import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
-import { createNewCafe } from '../controller/cafe.controller.js';
+import { addCafeImages, cafeThemes, createNewCafe, deleteCafe, getAllCafes, getCafeById, getCafesByLocation, getCafesByTheme, getPopularCafes, removeCafeImage, searchCafes, updateCafe } from '../controller/cafe.controller.js';
+import { cancelBooking, createCafeBooking, getAvailableTimeSlots, getBookingById, getCafeBookings, getUserBookings, previewCafeBooking, updateBookingStatus, updatePaymentStatus } from '../controller/cafe.booking.controller.js';
 
 const indexRouter = express.Router();
 
@@ -51,8 +52,40 @@ indexRouter.post("/addToWatchlist", UserAuth, addToWatchlist);
 indexRouter.get("/getWatchlist", UserAuth, getMyWatchlist);
 indexRouter.delete("/removeFromWatchlist", UserAuth, removeWatchlistItem);
 
+//cafe theme & Category;
+indexRouter.get("/cafeThemes", cafeThemes);
+indexRouter.get("/getCafesByTheme", getCafesByTheme);
+
 //cafe booking & list section
-indexRouter.post("/createCafe", UserAuth, upload.array("images", 10), createNewCafe);
+indexRouter.get("/getAllCafes", getAllCafes);
+indexRouter.get("/search", searchCafes);
+indexRouter.get("/location", getCafesByLocation);
+indexRouter.get("/popular", getPopularCafes);
+indexRouter.get("/getCafeById/:id", getCafeById);
+
+// Protected routes (require authentication)
+indexRouter.post("/createCafe", AdminAuth, upload.any(), createNewCafe);
+indexRouter.put("/updateCafe/:id", AdminAuth, upload.any(), updateCafe);
+indexRouter.delete("/deleteCafe/:id", AdminAuth, deleteCafe);
+indexRouter.post("/addCafeImage/:id/images", AdminAuth, upload.array('images', 10), addCafeImages);
+indexRouter.delete("/removeCafeImage/:id/images/:imageUrl", AdminAuth, removeCafeImage);
+
+
+indexRouter.get("/available-slots", getAvailableTimeSlots);
+
+// User routes (require authentication)
+indexRouter.post("/createCafeBooking/:cafeId", UserAuth, createCafeBooking);
+indexRouter.get("/my-cafe-bookings", UserAuth, getUserBookings);
+indexRouter.get("/getBookingById/:id", UserAuth, getBookingById);
+indexRouter.put("/:id/cancel", UserAuth, cancelBooking);
+// In your routes file
+indexRouter.post("/:cafeId/preview-booking", previewCafeBooking);
+// Admin routes
+indexRouter.get("/cafe/:cafeId", AdminAuth, getCafeBookings);
+indexRouter.put("/:id/status", AdminAuth, updateBookingStatus);
+indexRouter.put("/:id/payment", AdminAuth, updatePaymentStatus);
+
+
 
 //all list out of S3 images
 indexRouter.get("/s3/list", async (req, res) => {
