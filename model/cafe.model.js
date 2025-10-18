@@ -1,44 +1,44 @@
 import mongoose from "mongoose";
 
 const CafeSchema = new mongoose.Schema({
-  name: { 
-    type: String, 
+  name: {
+    type: String,
     required: [true, "Cafe name is required"],
     trim: true,
     maxlength: [100, "Name cannot exceed 100 characters"]
   },
-  description: { 
+  description: {
     type: String,
     maxlength: [1000, "Description cannot exceed 1000 characters"],
     default: ""
   },
   location: {
-    address: { 
-      type: String, 
+    address: {
+      type: String,
       required: [true, "Address is required"],
-      trim: true 
+      trim: true
     },
-    city: { 
-      type: String, 
+    city: {
+      type: String,
       trim: true,
       required: [true, "City is required"]
     },
-    state: { 
-      type: String, 
-      trim: true 
+    state: {
+      type: String,
+      trim: true
     },
-    country: { 
-      type: String, 
+    country: {
+      type: String,
       trim: true,
       default: "United States"
     },
     coordinates: {
-      lat: { 
+      lat: {
         type: Number,
         min: -90,
         max: 90
       },
-      lng: { 
+      lng: {
         type: Number,
         min: -180,
         max: 180
@@ -46,33 +46,34 @@ const CafeSchema = new mongoose.Schema({
     }
   },
   themeCategory: {
-    image: { 
+    image: {
       type: String,
       default: null,
       validate: {
-        validator: function(v) {
+        validator: function (v) {
           return v === null || /^https?:\/\/.+\..+/.test(v);
         },
         message: "Invalid image URL"
       }
     },
-    name: { 
+    name: {
       type: String,
-      trim: true,
-      required: [true, "Theme category name is required"]
+      enum: ["Cozy", "Modern", "Rustic", "Vintage", "Industrial", "Minimalist"],
+      default: null,
+      required: true
     }
   },
   images: [{
     type: String,
     validate: {
-      validator: function(v) {
+      validator: function (v) {
         return /^https?:\/\/.+\..+/.test(v);
       },
       message: "Invalid image URL"
     }
   }],
-  rating: { 
-    type: Number, 
+  rating: {
+    type: Number,
     default: 0,
     min: [0, "Rating cannot be less than 0"],
     max: [5, "Rating cannot exceed 5"]
@@ -81,15 +82,15 @@ const CafeSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  popular: { 
-    type: Boolean, 
-    default: false 
+  popular: {
+    type: Boolean,
+    default: false
   },
-  amenities: [{ 
+  amenities: [{
     type: String,
     trim: true
   }],
-  services: [{ 
+  services: [{
     type: String,
     trim: true
   }],
@@ -119,12 +120,12 @@ const CafeSchema = new mongoose.Schema({
     }
   },
   pricing: {
-    averagePrice: { 
+    averagePrice: {
       type: Number,
       min: [0, "Price cannot be negative"]
     },
-    currency: { 
-      type: String, 
+    currency: {
+      type: String,
       default: 'USD',
       uppercase: true,
       enum: {
@@ -143,13 +144,13 @@ const CafeSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
+  createdAt: {
+    type: Date,
+    default: Date.now
   },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 });
 
@@ -162,14 +163,14 @@ CafeSchema.index({ status: 1 });
 CafeSchema.index({ createdBy: 1 });
 
 // Update the updatedAt field before saving
-CafeSchema.pre('save', function(next) {
+CafeSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   next();
 });
 
 // Static method to find cafes by location
-CafeSchema.statics.findByLocation = function(city, country) {
-  return this.find({ 
+CafeSchema.statics.findByLocation = function (city, country) {
+  return this.find({
     'location.city': new RegExp(city, 'i'),
     'location.country': new RegExp(country, 'i'),
     status: 'active'
@@ -177,24 +178,24 @@ CafeSchema.statics.findByLocation = function(city, country) {
 };
 
 // Static method to find popular cafes
-CafeSchema.statics.findPopular = function(limit = 10) {
-  return this.find({ 
-    popular: true, 
-    status: 'active' 
+CafeSchema.statics.findPopular = function (limit = 10) {
+  return this.find({
+    popular: true,
+    status: 'active'
   })
-  .sort({ rating: -1 })
-  .limit(limit);
+    .sort({ rating: -1 })
+    .limit(limit);
 };
 
 // Instance method to check if cafe is open
-CafeSchema.methods.isOpenNow = function() {
+CafeSchema.methods.isOpenNow = function () {
   const now = new Date();
   const today = now.toLocaleString('en-us', { weekday: 'long' }).toLowerCase();
   const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-  
+
   const hours = this.operatingHours[today];
   if (!hours || !hours.open || !hours.close) return false;
-  
+
   return currentTime >= hours.open && currentTime <= hours.close;
 };
 

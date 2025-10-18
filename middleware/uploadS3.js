@@ -128,3 +128,27 @@ export const deleteFromS3 = async (key) => {
     throw error;
   }
 };
+
+export const deleteMultipleFromS3 = async (keys = []) => {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    log.warn("No S3 keys provided for deletion.");
+    return;
+  }
+
+  try {
+    const results = await Promise.allSettled(keys.map((key) => deleteFromS3(key)));
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        log.success(`✅ Deleted S3 file: ${keys[index]}`);
+      } else {
+        log.error(`❌ Failed to delete S3 file: ${keys[index]}`, result.reason);
+      }
+    });
+
+    return results;
+  } catch (error) {
+    log.error("deleteMultipleFromS3 Error:", error);
+    throw error;
+  }
+};

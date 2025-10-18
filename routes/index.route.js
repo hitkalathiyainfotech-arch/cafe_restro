@@ -11,6 +11,8 @@ import log from '../utils/logger.js'
 import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
 import { addCafeImages, cafeThemes, createNewCafe, deleteCafe, getAllCafes, getCafeById, getCafesByLocation, getCafesByTheme, getPopularCafes, removeCafeImage, searchCafes, updateCafe } from '../controller/cafe.controller.js';
 import { cancelBooking, createCafeBooking, getAvailableTimeSlots, getBookingById, getCafeBookings, getUserBookings, previewCafeBooking, updateBookingStatus, updatePaymentStatus } from '../controller/cafe.booking.controller.js';
+import { createNewRestaurant, deleteRestaurant, filterRestaurants, getAllRestos, getAvailableRestoTimeSlots, getAvailableTables, getSingleRestro, restroChangeStatus, searchRestaurants, updateRestaurant } from '../controller/restro.controller.js';
+import { sendBadRequest, sendError, sendSuccess } from '../utils/responseUtils.js';
 
 const indexRouter = express.Router();
 
@@ -82,10 +84,36 @@ indexRouter.put("/:id/cancel", UserAuth, cancelBooking);
 indexRouter.post("/:cafeId/preview-booking", previewCafeBooking);
 // Admin routes
 indexRouter.get("/cafe/:cafeId", AdminAuth, getCafeBookings);
-indexRouter.put("/:id/status", AdminAuth, updateBookingStatus);
-indexRouter.put("/:id/payment", AdminAuth, updatePaymentStatus);
+indexRouter.put("/cafe/:id/status", AdminAuth, updateBookingStatus);
+indexRouter.put("/cafe/:id/payment", AdminAuth, updatePaymentStatus);
 
 
+//restro section
+indexRouter.post("/createNewRestro", AdminAuth, upload.fields([
+  { name: "featured", maxCount: 1 },
+  { name: "gallery", maxCount: 10 },
+  { name: "menu", maxCount: 10 },
+]), createNewRestaurant);
+indexRouter.get("/getAllRestros", AdminAuth, getAllRestos);
+indexRouter.get("/getRestroById/:id", getSingleRestro);
+
+// UPDATE restaurant
+indexRouter.put("/updateRestro/:id", AdminAuth, upload.fields([
+  { name: "featured", maxCount: 1 },
+  { name: "gallery", maxCount: 10 },
+  { name: "menu", maxCount: 5 },
+]), updateRestaurant);
+indexRouter.delete("/deleteRestro/:id", AdminAuth, deleteRestaurant);
+indexRouter.get("/resto/filter/advanced", filterRestaurants);
+indexRouter.get("/restro/:id/tables", getAvailableTables);
+indexRouter.get("/restro/:id/time-slots", getAvailableRestoTimeSlots);
+//search restro
+indexRouter.get("/restro/search", searchRestaurants);
+indexRouter.get("/restro/changeStatus/:id", AdminAuth, restroChangeStatus);
+
+//activitys section
+// 1. get all vistion places
+indexRouter.get("/")
 
 //all list out of S3 images
 indexRouter.get("/s3/list", async (req, res) => {
@@ -112,6 +140,47 @@ indexRouter.delete("/s3/delete", async (req, res) => {
   catch (error) {
     log.error("Delete S3 Image Error:" + error.message);
     return res.status(500).json({ message: "Failed to delete image from S3", error });
+  }
+});
+
+indexRouter.delete("/s3/delete-multiple", async (req, res) => {
+  try {
+    const { images } = req.body;
+
+    if (!Array.isArray(images) || images.length === 0) {
+      return sendBadRequest(res, "Images array is required");
+    }
+
+    // Extract S3 keys from URLs
+    const keys = images
+      .map(url => {
+        const key = url.split(".amazonaws.com/")[1];
+        return key || null;
+      })
+      .filter(Boolean); // Remove nulls
+
+    if (keys.length === 0) {
+      return sendBadRequest(res, "No valid S3 keys found in images array");
+    }
+
+    // Delete all keys
+    const results = await Promise.allSettled(keys.map((key) => deleteFromS3(key)));
+
+    const success = [];
+    const failed = [];
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        success.push(keys[index]);
+      } else {
+        failed.push({ key: keys[index], reason: result.reason.message });
+      }
+    });
+
+    return sendSuccess(res, "S3 images deletion completed", { success, failed });
+  } catch (error) {
+    log.error("deleteMultipleImages Error:", error);
+    return sendError(res, 500, "Failed to delete images", error.message);
   }
 });
 
