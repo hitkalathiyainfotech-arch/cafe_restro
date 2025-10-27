@@ -1,5 +1,15 @@
 import mongoose from "mongoose";
 
+const reviewSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Types.ObjectId, ref: "User" },
+    admin: { type: mongoose.Types.ObjectId, ref: "Admin" },
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    comment: { type: String },
+  },
+  { timestamps: true }
+);
+
 const CafeSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -72,12 +82,7 @@ const CafeSchema = new mongoose.Schema({
       message: "Invalid image URL"
     }
   }],
-  rating: {
-    type: Number,
-    default: 0,
-    min: [0, "Rating cannot be less than 0"],
-    max: [5, "Rating cannot exceed 5"]
-  },
+  rating: [reviewSchema],
   totalReviews: {
     type: Number,
     default: 0

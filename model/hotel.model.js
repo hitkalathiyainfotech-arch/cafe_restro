@@ -49,6 +49,11 @@ const hotelSchema = new mongoose.Schema(
       type: Number,
       default: null
     },
+    ourService: {
+      connectVieCall: { type: String, default: null },
+      connectVieMessage: { type: String, default: null },
+      helpSupport: { type: String, default: null }
+    },
     rating: { type: Number, default: 0 },
     totalReviews: { type: Number, default: 0 },
     reviews: [reviewSchema],

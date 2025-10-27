@@ -13,6 +13,8 @@ import { addCafeImages, cafeThemes, createNewCafe, deleteCafe, getAllCafes, getC
 import { cancelBooking, createCafeBooking, getAvailableTimeSlots, getBookingById, getCafeBookings, getUserBookings, previewCafeBooking, updateBookingStatus, updatePaymentStatus } from '../controller/cafe.booking.controller.js';
 import { createNewRestaurant, deleteRestaurant, filterRestaurants, getAllRestos, getAvailableRestoTimeSlots, getAvailableTables, getSingleRestro, restroChangeStatus, searchRestaurants, updateRestaurant } from '../controller/restro.controller.js';
 import { sendBadRequest, sendError, sendSuccess } from '../utils/responseUtils.js';
+import { bestPlaceByCity, bestPlaceByCityBasic, getAllCountries, getCityByCountry, getHotelByCity, getPlaceDeatil } from '../controller/activity.controller.js';
+// import { addReview, getMyAllReviews } from '../controller/review.controller.js';
 
 const indexRouter = express.Router();
 
@@ -113,7 +115,26 @@ indexRouter.get("/restro/changeStatus/:id", AdminAuth, restroChangeStatus);
 
 //activitys section
 // 1. get all vistion places
-indexRouter.get("/")
+indexRouter.get("/allCountries", getAllCountries)
+indexRouter.get("/getCityByCountry/:country", getCityByCountry);
+indexRouter.get("/bestPlaceByCity/:cityName", bestPlaceByCity);
+indexRouter.get("/bestPlaceByCityBasic/:cityName", bestPlaceByCityBasic);
+indexRouter.get("/getPlaceDeatil/:placeName", getPlaceDeatil)
+indexRouter.get("/getHotelByCity/:city", getHotelByCity)
+
+
+
+
+
+
+
+
+// review 
+// indexRouter.post("/addReview/:businessId", UserAuth, addReview)
+// indexRouter.get("/getMyAllReviews", UserAuth, getMyAllReviews)
+
+
+
 
 //all list out of S3 images
 indexRouter.get("/s3/list", async (req, res) => {
@@ -151,7 +172,6 @@ indexRouter.delete("/s3/delete-multiple", async (req, res) => {
       return sendBadRequest(res, "Images array is required");
     }
 
-    // Extract S3 keys from URLs
     const keys = images
       .map(url => {
         const key = url.split(".amazonaws.com/")[1];

@@ -1,5 +1,15 @@
 import mongoose from "mongoose";
 
+const reviewSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Types.ObjectId, ref: "User" },
+    admin: { type: mongoose.Types.ObjectId, ref: "Admin" },
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    comment: { type: String },
+  },
+  { timestamps: true }
+);
+
 const tableGroupSchema = new mongoose.Schema({
   capacity: {
     type: Number,
@@ -212,25 +222,7 @@ const restaurantSchema = new mongoose.Schema(
       }]
     },
     tableGroups: [tableGroupSchema],
-    rating: {
-      average: {
-        type: Number,
-        default: 0,
-        min: 0,
-        max: 5
-      },
-      totalReviews: {
-        type: Number,
-        default: 0
-      },
-      breakdown: {
-        fiveStar: { type: Number, default: 0 },
-        fourStar: { type: Number, default: 0 },
-        threeStar: { type: Number, default: 0 },
-        twoStar: { type: Number, default: 0 },
-        oneStar: { type: Number, default: 0 }
-      }
-    },
+    rating: [reviewSchema],
     socialMedia: {
       facebook: { type: String, default: "" },
       instagram: { type: String, default: "" },

@@ -37,7 +37,7 @@ export const addToWatchlist = async (req, res) => {
 export const getMyWatchlist = async (req, res) => {
   try {
     const userId = req.user?._id;
-    const watchlist = await watchListModel.findOne({ userId }).populate("userId hotels cafe"); // in fututre add cafe restro for popluate - hit
+    const watchlist = await watchListModel.findOne({ userId }).populate("userId hotels cafe restro");
 
     if (!watchlist) {
       return sendSuccess(res, "No watchlist found", { hotels: [], cafes: [], restros: [] });

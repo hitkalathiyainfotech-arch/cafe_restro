@@ -6,7 +6,7 @@ import log from "../utils/logger.js";
 
 export const createNewHotel = async (req, res) => {
   try {
-    const { name, description, address, location, amenities, priceRange, Rent, rooms } = req.body;
+    const { name, description, address, location, amenities, priceRange, Rent, rooms, ourService } = req.body;
 
     if (!name) return sendBadRequest(res, "Hotel name is required");
 
@@ -27,7 +27,7 @@ export const createNewHotel = async (req, res) => {
 
       parsedRooms = await Promise.all(
         parsedRooms.map(async (room, idx) => {
-          const roomFile = roomImagesFiles[idx]; // map 1:1 room image
+          const roomFile = roomImagesFiles[idx];
           if (roomFile && roomFile.buffer) {
             room.images = [await uploadToS3(roomFile.buffer, roomFile.originalname, roomFile.mimetype, "rooms")];
           } else {
@@ -49,6 +49,11 @@ export const createNewHotel = async (req, res) => {
       priceRange: priceRange ? JSON.parse(priceRange) : {},
       Rent: Rent || null,
       images: hotelImages,
+      ourService: {
+        connectVieCall: ourService?.connectVieCall || null,
+        connectVieMessage: ourService?.connectVieMessage || null,
+        helpSupport: ourService?.helpSupport || null,
+      },
       rooms: parsedRooms,
     });
 
