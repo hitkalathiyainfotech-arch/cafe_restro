@@ -120,7 +120,7 @@ indexRouter.get("/restro/changeStatus/:id", AdminAuth, restroChangeStatus);
 indexRouter.post("/createRestroBooking/:restaurantId", UserAuth, createRestaurantBooking);
 indexRouter.get("/restro/my-bookings", UserAuth, getUserRestaurantBookings);
 indexRouter.patch("/updateRestroPaymentStatus/:bookingId/payment", UserAuth, updateRestaurantPaymentStatus);
-
+// indexRouter.post("/restro/cancelMyBooking/:bookingId",userAuth,cancelMyRestroBooking);
 // // Admin routes (restro Booking)
 indexRouter.get("/restro/:restaurantId", AdminAuth, getRestaurantBookings);
 indexRouter.get("/getRestroBookingById/:bookingId", AdminAuth, getRestaurantBookingById); // *
@@ -142,19 +142,12 @@ indexRouter.get("/getHotelByCity/:city", getHotelByCity)
 
 
 
-
-
-
-
-
 // review 
 indexRouter.post("/addReview/:businessId", UserAuth, addReview);
 indexRouter.get("/myReview", UserAuth, getMyAllReviews);
 indexRouter.put("/review/update/:reviewId", UserAuth, updateReview);
 indexRouter.delete("/review/delete/:reviewId", UserAuth, deleteReview);
 indexRouter.get("/review/business/:businessId", getBusinessReviews);
-
-
 
 
 
@@ -227,4 +220,3 @@ indexRouter.delete("/s3/delete-multiple", async (req, res) => {
 });
 
 export default indexRouter;
-
