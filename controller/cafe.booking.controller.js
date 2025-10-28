@@ -281,7 +281,8 @@ export const getBookingById = async (req, res) => {
   }
 };
 
-export const previewCafeBooking = async (req, res) => {
+export
+ const previewCafeBooking = async (req, res) => {
   try {
     const { cafeId } = req.params;
     const {
@@ -638,7 +639,6 @@ export const getAvailableTimeSlots = async (req, res) => {
       });
     }
 
-    // Validate and parse date - FIXED
     let bookingDate;
     try {
       // Try parsing as ISO string (YYYY-MM-DD)

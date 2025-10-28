@@ -5,7 +5,7 @@ import { adminLogin, adminUpdate, deleteAdmin, getAdminById, getAllAdmins, newAd
 import { AdminAuth } from '../middleware/AdminAuth.js';
 import { createNewHotel, deleteHotels, getAllHotels, getHotelById } from '../controller/hotel.controller.js';
 import { handleMulterErrors, processAndUploadImages, uploadFiles } from '../middleware/multer.middleware.js';
-import { createBooking, getMyHotelBookings, hotelAdminBookings, previewBooking, updateHotelBookingStatus, } from '../controller/hotel.booking.controller.js';
+import { createBooking, getMyHotelBookings, hotelAdminBookings, previewHotelBooking, updateHotelBookingStatus, } from '../controller/hotel.booking.controller.js';
 import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
 import log from '../utils/logger.js'
 import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
@@ -15,6 +15,7 @@ import { createNewRestaurant, deleteRestaurant, filterRestaurants, getAllRestos,
 import { sendBadRequest, sendError, sendSuccess } from '../utils/responseUtils.js';
 import { bestPlaceByCity, bestPlaceByCityBasic, getAllCountries, getCityByCountry, getHotelByCity, getPlaceDeatil } from '../controller/activity.controller.js';
 import { addReview, deleteReview, getBusinessReviews, getMyAllReviews, updateReview } from '../controller/review.controller.js';
+import { createRestaurantBooking, getRestaurantBookingById, getRestaurantBookings, getUserRestaurantBookings,updateRestaurantBookingStatus, updateRestaurantPaymentStatus } from '../controller/restro.booking.controller.js';
 // import { addReview, getMyAllReviews } from '../controller/review.controller.js';
 
 const indexRouter = express.Router();
@@ -47,7 +48,7 @@ indexRouter.delete("/deleteHotel/:hotelId", AdminAuth, deleteHotels);
 
 //hotel. booking section
 indexRouter.post("/hotel/createBooking/:hotelId", UserAuth, createBooking);
-indexRouter.post("/hotel/previewBooking/:hotelId", UserAuth, previewBooking);
+indexRouter.post("/hotel/previewBooking/:hotelId", UserAuth, previewHotelBooking);
 indexRouter.get("/hotel/MyBookings", UserAuth, getMyHotelBookings);
 indexRouter.get("/HotelAdminBookings", AdminAuth, hotelAdminBookings);
 indexRouter.patch("/hotel/statusUpdate/:bookingId", AdminAuth, updateHotelBookingStatus);
@@ -113,6 +114,22 @@ indexRouter.get("/restro/:id/time-slots", getAvailableRestoTimeSlots);
 //search restro
 indexRouter.get("/restro/search", searchRestaurants);
 indexRouter.get("/restro/changeStatus/:id", AdminAuth, restroChangeStatus);
+
+// restro booking 
+// user side
+indexRouter.post("/createRestroBooking/:restaurantId", UserAuth, createRestaurantBooking);
+indexRouter.get("/restro/my-bookings", UserAuth, getUserRestaurantBookings);
+indexRouter.patch("/updateRestroPaymentStatus/:bookingId/payment", UserAuth, updateRestaurantPaymentStatus);
+
+// // Admin routes (restro Booking)
+indexRouter.get("/restro/:restaurantId", AdminAuth, getRestaurantBookings);
+indexRouter.get("/getRestroBookingById/:bookingId", AdminAuth, getRestaurantBookingById); // *
+indexRouter.patch("/restro/:bookingId/status", AdminAuth, updateRestaurantBookingStatus);
+// indexRouter.patch("/restro/:bookingId/checkin", AdminAuth, checkInGuest);
+// indexRouter.patch("/restro/:bookingId/checkout", AdminAuth, checkOutGuest);
+// // indexRouter.get("/restro/stats/:restaurantId", AdminAuth, getBookingStats);
+
+
 
 //activitys section
 // 1. get all vistion places

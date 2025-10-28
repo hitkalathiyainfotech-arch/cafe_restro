@@ -258,18 +258,35 @@ restaurantSchema.virtual("address.full").get(function () {
   return `${this.address.street}, ${this.address.city}, ${this.address.state}, ${this.address.country}${this.address.postalCode ? ' - ' + this.address.postalCode : ''}`;
 });
 
-// Virtual for isOpen
-restaurantSchema.virtual("isOpen").get(function () {
-  const now = new Date();
-  const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-  const currentDay = now.toLocaleString('en-us', { weekday: 'long' }).toLowerCase();
 
-  if (this.operatingHours.closedOn.includes(currentDay)) {
+restaurantSchema.virtual("isOpen").get(function () {
+  // 🕒 Safe defaults
+  const now = new Date();
+  const currentTime = now.getHours().toString().padStart(2, "0") + ":" + now.getMinutes().toString().padStart(2, "0");
+  const currentDay = now.toLocaleString("en-us", { weekday: "long" }).toLowerCase();
+
+  // 🧩 Guard clause: if no operating hours defined
+  if (!this.operatingHours || !this.operatingHours.openingTime || !this.operatingHours.closingTime) {
     return false;
   }
 
-  return currentTime >= this.operatingHours.openingTime && currentTime <= this.operatingHours.closingTime;
+  // 🧩 Guard clause: if closedOn is missing or not array
+  const closedOn = Array.isArray(this.operatingHours.closedOn)
+    ? this.operatingHours.closedOn
+    : [];
+
+  // 🧩 Check if today is closed
+  if (closedOn.includes(currentDay)) {
+    return false;
+  }
+
+  // 🧩 Compare current time with open/close times
+  return (
+    currentTime >= this.operatingHours.openingTime &&
+    currentTime <= this.operatingHours.closingTime
+  );
 });
+
 
 // Indexes for performance
 restaurantSchema.index({ "address.city": 1 });

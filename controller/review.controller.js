@@ -225,7 +225,7 @@ export const getBusinessReviews = async (req, res) => {
       return sendError(res, "Invalid business ID.");
     }
 
-  
+
     const models = [
       { type: "Hotel", model: hotelModel },
       { type: "Cafes", model: cafeModel },
@@ -245,7 +245,7 @@ export const getBusinessReviews = async (req, res) => {
     if (!businessType)
       return sendError(res, "No business found with given ID.");
 
-  
+
     const reviews = await reviewModel
       .find({ businessId, businessType })
       .populate("userId", "name email")
