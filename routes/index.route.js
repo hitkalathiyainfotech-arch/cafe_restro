@@ -14,6 +14,7 @@ import { cancelBooking, createCafeBooking, getAvailableTimeSlots, getBookingById
 import { createNewRestaurant, deleteRestaurant, filterRestaurants, getAllRestos, getAvailableRestoTimeSlots, getAvailableTables, getSingleRestro, restroChangeStatus, searchRestaurants, updateRestaurant } from '../controller/restro.controller.js';
 import { sendBadRequest, sendError, sendSuccess } from '../utils/responseUtils.js';
 import { bestPlaceByCity, bestPlaceByCityBasic, getAllCountries, getCityByCountry, getHotelByCity, getPlaceDeatil } from '../controller/activity.controller.js';
+import { addReview, deleteReview, getBusinessReviews, getMyAllReviews, updateReview } from '../controller/review.controller.js';
 // import { addReview, getMyAllReviews } from '../controller/review.controller.js';
 
 const indexRouter = express.Router();
@@ -130,8 +131,12 @@ indexRouter.get("/getHotelByCity/:city", getHotelByCity)
 
 
 // review 
-// indexRouter.post("/addReview/:businessId", UserAuth, addReview)
-// indexRouter.get("/getMyAllReviews", UserAuth, getMyAllReviews)
+indexRouter.post("/addReview/:businessId", UserAuth, addReview);
+indexRouter.get("/myReview", UserAuth, getMyAllReviews);
+indexRouter.put("/review/update/:reviewId", UserAuth, updateReview);
+indexRouter.delete("/review/delete/:reviewId", UserAuth, deleteReview);
+indexRouter.get("/review/business/:businessId", getBusinessReviews);
+
 
 
 

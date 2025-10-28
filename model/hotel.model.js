@@ -54,8 +54,7 @@ const hotelSchema = new mongoose.Schema(
       connectVieMessage: { type: String, default: null },
       helpSupport: { type: String, default: null }
     },
-    rating: { type: Number, default: 0 },
-    totalReviews: { type: Number, default: 0 },
+    averageRating: { type: Number, default: 0 },
     reviews: [reviewSchema],
   },
   { timestamps: true }

@@ -222,7 +222,8 @@ const restaurantSchema = new mongoose.Schema(
       }]
     },
     tableGroups: [tableGroupSchema],
-    rating: [reviewSchema],
+    reviews: [reviewSchema],
+    averageRating: { type: Number, default: 0 },
     socialMedia: {
       facebook: { type: String, default: "" },
       instagram: { type: String, default: "" },
