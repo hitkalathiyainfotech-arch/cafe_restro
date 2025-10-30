@@ -1,9 +1,10 @@
 import cafeBookingModel from "../model/cafe.booking.model.js";
 import cafeModel from "../model/cafe.model.js";
 import mongoose from "mongoose";
-import { sendBadRequest } from "../utils/responseUtils.js";
+import { sendBadRequest, sendNotFound } from "../utils/responseUtils.js";
 import { v4 as uuidv4 } from "uuid";
 import log from "../utils/logger.js";
+import coupanModel from "../model/coupan.model.js";
 
 // Create new cafe booking
 export const createCafeBooking = async (req, res) => {
@@ -20,35 +21,30 @@ export const createCafeBooking = async (req, res) => {
       transactionId,
       paymentStatus,
       paymentDate,
+      couponCode,
       currency,
     } = req.body;
 
-
-
     const userId = req.user?._id;
 
+    // Validation
     if (!cafeId || !bookingDate || !timeSlot || !numberOfGuests) {
       return res.status(400).json({
         success: false,
-        message:
-          "Cafe ID, booking date, time slot, and number of guests are required",
+        message: "Cafe ID, booking date, time slot, and number of guests are required",
       });
     }
 
     if (!mongoose.Types.ObjectId.isValid(cafeId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid cafe ID",
-      });
+      return res.status(400).json({ success: false, message: "Invalid cafe ID" });
     }
 
-    const cafe = await cafeModel.findOne({ _id: cafeId });
+    const cafe = await cafeModel.findById(cafeId);
     if (!cafe) {
-      return res.status(404).json({
-        success: false,
-        message: "Cafe not found",
-      });
+      return res.status(404).json({ success: false, message: "Cafe not found" });
     }
+
+    // Prevent booking in past
     const bookingDateTime = new Date(bookingDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -59,6 +55,7 @@ export const createCafeBooking = async (req, res) => {
       });
     }
 
+    // Check slot availability
     const existingBooking = await cafeBookingModel.findOne({
       cafeId,
       bookingDate: bookingDateTime,
@@ -73,13 +70,47 @@ export const createCafeBooking = async (req, res) => {
       });
     }
 
+    // ---------------- Billing Logic ---------------- //
     const guestRate = perGuestRate || cafe.pricing?.averagePrice || 200;
     const totalGuestRate = guestRate * numberOfGuests;
+
+    let discountPercentage = 0;
+    let discountAmount = 0;
     const taxPercentage = 12;
-    const taxAmount = (totalGuestRate * taxPercentage) / 100;
     const serviceFee = 50;
-    const totalAmount = totalGuestRate + taxAmount + serviceFee;
-  
+
+    // Coupon validation
+    if (couponCode) {
+      const coupan = await coupanModel.findOne({ couponCode: couponCode, isActive: true });
+      if (!coupan) return sendNotFound(res, "Invalid or inactive coupon code!");
+      discountPercentage = coupan.couponPerc || 0;
+    }
+
+    // Calculate all values precisely
+    discountAmount = (totalGuestRate * discountPercentage) / 100;
+    const subtotal = totalGuestRate - discountAmount;
+    const taxAmount = (subtotal * taxPercentage) / 100;
+    const totalAmount = subtotal + taxAmount + serviceFee;
+
+    // Optional rounding for cleaner values
+    const round = (num) => Math.round(num * 100) / 100;
+
+    const finalPricing = {
+      perGuestRate: round(guestRate),
+      totalGuestRate: round(totalGuestRate),
+      discountPercentage: round(discountPercentage),
+      couponCode: couponCode || "",
+      discountAmount: round(discountAmount),
+      taxPercentage: round(taxPercentage),
+      taxAmount: round(taxAmount),
+      serviceFee: round(serviceFee),
+      totalAmount: round(totalAmount),
+      currency: currency || cafe.pricing?.currency || "INR",
+    };
+
+    console.log("BILLING:", finalPricing);
+
+    // ---------------- Guest & Payment Info ---------------- //
     const guest = {
       isMySelf: guestDetails?.isMySelf ?? true,
       name: guestDetails?.name || "",
@@ -89,14 +120,15 @@ export const createCafeBooking = async (req, res) => {
       state: guestDetails?.state || "",
       country: guestDetails?.country || "",
     };
-  
+
     const payment = {
       transactionId: transactionId || "",
       paymentStatus: paymentStatus || "pending",
-      paymentMethod: paymentMethod || "",
-      paymentDate: paymentDate ? new Date(paymentDate) : null,
+      paymentMethod: paymentMethod || "Razorpay",
+      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
     };
 
+    // ---------------- Create Booking ---------------- //
     const newBooking = new cafeBookingModel({
       bookingId: uuidv4(),
       userId,
@@ -106,18 +138,8 @@ export const createCafeBooking = async (req, res) => {
       timeSlot,
       numberOfGuests,
       guest,
-      guestInfo: {
-        specialRequests: specialRequests || "",
-      },
-      pricing: {
-        perGuestRate: guestRate,
-        totalGuestRate,
-        taxPercentage,
-        taxAmount,
-        serviceFee,
-        totalAmount,
-        currency: currency || cafe.pricing?.currency || "INR",
-      },
+      guestInfo: { specialRequests: specialRequests || "" },
+      pricing: finalPricing,
       payment,
       bookingStatus: "Upcoming",
     });
@@ -139,6 +161,8 @@ export const createCafeBooking = async (req, res) => {
     });
   }
 };
+
+
 
 
 // Get all bookings for a user
@@ -282,148 +306,148 @@ export const getBookingById = async (req, res) => {
 };
 
 export
- const previewCafeBooking = async (req, res) => {
-  try {
-    const { cafeId } = req.params;
-    const {
-      bookingDate,
-      startTime,     // e.g. "10:00"
-      endTime,       // e.g. "14:00"
-      numberOfTables = 1,
-      numberOfGuests = 1,
-      specialRequests = ""
-    } = req.body;
+  const previewCafeBooking = async (req, res) => {
+    try {
+      const { cafeId } = req.params;
+      const {
+        bookingDate,
+        startTime,     // e.g. "10:00"
+        endTime,       // e.g. "14:00"
+        numberOfTables = 1,
+        numberOfGuests = 1,
+        specialRequests = ""
+      } = req.body;
 
-    if (!bookingDate || !startTime || !endTime)
-      return res.status(400).json({
-        success: false,
-        message: "Booking date, startTime and endTime are required"
-      });
+      if (!bookingDate || !startTime || !endTime)
+        return res.status(400).json({
+          success: false,
+          message: "Booking date, startTime and endTime are required"
+        });
 
-    const cafe = await cafeModel.findById(cafeId);
-    if (!cafe)
-      return res.status(404).json({ success: false, message: "Cafe not found" });
+      const cafe = await cafeModel.findById(cafeId);
+      if (!cafe)
+        return res.status(404).json({ success: false, message: "Cafe not found" });
 
-    // -----------------------------
-    // 🕓 Duration Calculation
-    // -----------------------------
-    const [startHour, startMin] = startTime.split(":").map(Number);
-    const [endHour, endMin] = endTime.split(":").map(Number);
-    const durationHours = (endHour + endMin / 60) - (startHour + startMin / 60);
-    if (durationHours <= 0)
-      return res.status(400).json({ success: false, message: "Invalid time range" });
+      // -----------------------------
+      // 🕓 Duration Calculation
+      // -----------------------------
+      const [startHour, startMin] = startTime.split(":").map(Number);
+      const [endHour, endMin] = endTime.split(":").map(Number);
+      const durationHours = (endHour + endMin / 60) - (startHour + startMin / 60);
+      if (durationHours <= 0)
+        return res.status(400).json({ success: false, message: "Invalid time range" });
 
-    // -----------------------------
-    // 💰 Base Pricing
-    // -----------------------------
-    const baseRatePerHour = cafe.pricing?.averagePrice || 100; // fallback ₹100/hr per table
-    const baseSubtotal = baseRatePerHour * durationHours * numberOfTables;
+      // -----------------------------
+      // 💰 Base Pricing
+      // -----------------------------
+      const baseRatePerHour = cafe.pricing?.averagePrice || 100; // fallback ₹100/hr per table
+      const baseSubtotal = baseRatePerHour * durationHours * numberOfTables;
 
-    // -----------------------------
-    // 🔥 Dynamic Discounts
-    // -----------------------------
-    let discountPercentage = 0;
+      // -----------------------------
+      // 🔥 Dynamic Discounts
+      // -----------------------------
+      let discountPercentage = 0;
 
-    // 1. More than 3 hours → 10% discount
-    if (durationHours >= 3) discountPercentage += 10;
+      // 1. More than 3 hours → 10% discount
+      if (durationHours >= 3) discountPercentage += 10;
 
-    // 2. More than 2 tables → 5% discount
-    if (numberOfTables > 2) discountPercentage += 5;
+      // 2. More than 2 tables → 5% discount
+      if (numberOfTables > 2) discountPercentage += 5;
 
-    // 3. Weekend discount logic (or could be surcharge)
-    const dayOfWeek = new Date(bookingDate).getDay(); // 0 = Sun, 6 = Sat
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      // 3. Weekend discount logic (or could be surcharge)
+      const dayOfWeek = new Date(bookingDate).getDay(); // 0 = Sun, 6 = Sat
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-    // 4. Evening surcharge
-    const isEvening = endHour >= 18;
-    const peakHourMultiplier = isEvening ? 1.2 : 1;
+      // 4. Evening surcharge
+      const isEvening = endHour >= 18;
+      const peakHourMultiplier = isEvening ? 1.2 : 1;
 
-    const subtotalBeforeDiscount = baseSubtotal * peakHourMultiplier;
-    const discountAmount = (subtotalBeforeDiscount * discountPercentage) / 100;
-    const discountedSubtotal = subtotalBeforeDiscount - discountAmount;
+      const subtotalBeforeDiscount = baseSubtotal * peakHourMultiplier;
+      const discountAmount = (subtotalBeforeDiscount * discountPercentage) / 100;
+      const discountedSubtotal = subtotalBeforeDiscount - discountAmount;
 
-    // -----------------------------
-    // 🧾 Taxes & Fees
-    // -----------------------------
-    const serviceChargePercentage = 5;
-    const serviceCharge = (discountedSubtotal * serviceChargePercentage) / 100;
+      // -----------------------------
+      // 🧾 Taxes & Fees
+      // -----------------------------
+      const serviceChargePercentage = 5;
+      const serviceCharge = (discountedSubtotal * serviceChargePercentage) / 100;
 
-    const taxPercentage = 12;
-    const taxAmount = (discountedSubtotal * taxPercentage) / 100;
+      const taxPercentage = 12;
+      const taxAmount = (discountedSubtotal * taxPercentage) / 100;
 
-    const reservationFee = 50; // flat booking charge
-    const totalAmount = discountedSubtotal + serviceCharge + taxAmount + reservationFee;
+      const reservationFee = 50; // flat booking charge
+      const totalAmount = discountedSubtotal + serviceCharge + taxAmount + reservationFee;
 
-    // -----------------------------
-    // ✅ Response (matches your UI)
-    // -----------------------------
-    return res.status(200).json({
-      success: true,
-      data: {
-        cafeDetails: {
-          _id: cafe._id,
-          name: cafe.name,
-          themeCategory: cafe.themeCategory?.name || null,
-          address: cafe.location?.address || null,
-          image: cafe.images?.[0] || null
-        },
-        bookingDetails: {
-          bookingDate,
-          startTime,
-          endTime,
-          durationHours,
-          numberOfTables,
-          numberOfGuests,
-          specialRequests,
-          isWeekend,
-          isPeakHour: isEvening
-        },
-        paymentSummary: {
-          title: "Payment Information",
-          items: [
-            {
-              label: `${numberOfTables} Table × ${durationHours} Hours`,
-              value: baseSubtotal.toFixed(2),
-              prefix: "₹"
-            },
-            {
-              label: "Discount",
-              value: discountPercentage > 0 ? `${discountPercentage}%` : "0%",
-              type: "discount"
-            },
-            {
-              label: "With Discount",
-              value: discountedSubtotal.toFixed(2),
-              prefix: "₹"
-            },
-            {
-              label: "Taxes & Services",
-              value: (serviceCharge + taxAmount).toFixed(2),
-              prefix: "₹"
-            },
-            {
-              label: "Reservation Fee",
-              value: reservationFee.toFixed(2),
-              prefix: "₹"
-            },
-            {
-              label: "Total Amount to Pay",
-              value: totalAmount.toFixed(2),
-              prefix: "₹",
-              bold: true
-            }
-          ],
-          totalAmount: totalAmount.toFixed(2),
-          currency: cafe.pricing?.currency || "INR",
-          proceedAction: "Process To Pay"
+      // -----------------------------
+      // ✅ Response (matches your UI)
+      // -----------------------------
+      return res.status(200).json({
+        success: true,
+        data: {
+          cafeDetails: {
+            _id: cafe._id,
+            name: cafe.name,
+            themeCategory: cafe.themeCategory?.name || null,
+            address: cafe.location?.address || null,
+            image: cafe.images?.[0] || null
+          },
+          bookingDetails: {
+            bookingDate,
+            startTime,
+            endTime,
+            durationHours,
+            numberOfTables,
+            numberOfGuests,
+            specialRequests,
+            isWeekend,
+            isPeakHour: isEvening
+          },
+          paymentSummary: {
+            title: "Payment Information",
+            items: [
+              {
+                label: `${numberOfTables} Table × ${durationHours} Hours`,
+                value: baseSubtotal.toFixed(2),
+                prefix: "₹"
+              },
+              {
+                label: "Discount",
+                value: discountPercentage > 0 ? `${discountPercentage}%` : "0%",
+                type: "discount"
+              },
+              {
+                label: "With Discount",
+                value: discountedSubtotal.toFixed(2),
+                prefix: "₹"
+              },
+              {
+                label: "Taxes & Services",
+                value: (serviceCharge + taxAmount).toFixed(2),
+                prefix: "₹"
+              },
+              {
+                label: "Reservation Fee",
+                value: reservationFee.toFixed(2),
+                prefix: "₹"
+              },
+              {
+                label: "Total Amount to Pay",
+                value: totalAmount.toFixed(2),
+                prefix: "₹",
+                bold: true
+              }
+            ],
+            totalAmount: totalAmount.toFixed(2),
+            currency: cafe.pricing?.currency || "INR",
+            proceedAction: "Process To Pay"
+          }
         }
-      }
-    });
-  } catch (err) {
-    console.error("Preview Cafe Booking Error:", err);
-    return res.status(500).json({ success: false, message: err.message });
-  }
-};
+      });
+    } catch (err) {
+      console.error("Preview Cafe Booking Error:", err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  };
 
 // Update booking status
 export const updateBookingStatus = async (req, res) => {

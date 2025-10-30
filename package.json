@@ -29,6 +29,7 @@
     "nodemailer-express-handlebars": "^7.0.0",
     "nodemon": "^3.1.10",
     "p-limit": "^7.2.0",
+    "pdfkit": "^0.17.2",
     "sharp": "^0.34.4",
     "uuid": "^13.0.0"
   },

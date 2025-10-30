@@ -65,10 +65,13 @@ const cafeBookingSchema = new mongoose.Schema(
     guestInfo: {
       specialRequests: { type: String, maxlength: 300, default: "" },
     },
-    
+
     pricing: {
       perGuestRate: { type: Number, required: true, min: 0 },
       totalGuestRate: { type: Number, default: 0 },
+      discountPercentage: { type: Number, default: 0 },
+      couponCode: { type: String, default: null },
+      discountAmount: { type: Number, default: 0 },
       taxPercentage: { type: Number, default: 12 },
       taxAmount: { type: Number, default: 0 },
       serviceFee: { type: Number, default: 50 },
@@ -92,17 +95,31 @@ const cafeBookingSchema = new mongoose.Schema(
 
 
 cafeBookingSchema.pre("validate", function (next) {
-  const totalGuestRate = this.pricing.perGuestRate * this.numberOfGuests;
-  this.pricing.totalGuestRate = totalGuestRate;
+  // Only auto-calculate if not already set
+  if (!this.pricing.totalGuestRate) {
+    this.pricing.totalGuestRate = this.pricing.perGuestRate * this.numberOfGuests;
+  }
 
-  const tax = (totalGuestRate * this.pricing.taxPercentage) / 100;
-  this.pricing.taxAmount = tax;
+  if (!this.pricing.discountAmount && this.pricing.discountPercentage) {
+    this.pricing.discountAmount =
+      (this.pricing.totalGuestRate * this.pricing.discountPercentage) / 100;
+  }
 
-  this.pricing.totalAmount =
-  totalGuestRate + tax + this.pricing.serviceFee;
+  if (!this.pricing.taxAmount) {
+    const subtotal = this.pricing.totalGuestRate - (this.pricing.discountAmount || 0);
+    this.pricing.taxAmount = (subtotal * this.pricing.taxPercentage) / 100;
+  }
+
+  if (!this.pricing.totalAmount) {
+    this.pricing.totalAmount =
+      (this.pricing.totalGuestRate - (this.pricing.discountAmount || 0)) +
+      this.pricing.taxAmount +
+      this.pricing.serviceFee;
+  }
 
   next();
 });
+
 
 const cafeBookingModel = mongoose.model("CafeBooking", cafeBookingSchema);
 export default cafeBookingModel;

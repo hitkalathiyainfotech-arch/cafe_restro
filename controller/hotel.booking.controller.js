@@ -1,7 +1,8 @@
 import log from "../utils/logger.js";
 import hotelBookingModel from "../model/hotel.booking.model.js";
 import hotelModel from "../model/hotel.model.js";
-import { sendError, sendSuccess } from "../utils/responseUtils.js";
+import { sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
+import coupanModel from "../model/coupan.model.js";
 
 export const createBooking = async (req, res) => {
   try {
@@ -18,6 +19,7 @@ export const createBooking = async (req, res) => {
       address,
       state,
       country,
+      coupanCode,
       children = 0,
       infants = 0,
       numberOfRooms = 1,
@@ -26,8 +28,7 @@ export const createBooking = async (req, res) => {
       paymentStatus
     } = req.body;
 
-    const guestId = req.user?._id; // from auth middleware
-
+    const guestId = req.user?._id;
     // Validate hotel
     const hotel = await hotelModel.findById(hotelId);
     if (!hotel) return res.status(404).json({ success: false, message: "Hotel not found" });
@@ -43,8 +44,24 @@ export const createBooking = async (req, res) => {
     // Pricing calculation
     const roomRatePerNight = room.pricePerNight;
     const totalRoomRate = roomRatePerNight * numberOfNights * numberOfRooms;
-    const discountPercentage = 0; // optional, can be added
+    let discountPercentage = 0;
+    if (coupanCode) {
+      const coupan = await coupanModel.findOne({ couponCode: coupanCode })
+      if (!coupan) {
+        return sendNotFound(res, "Coupon Code Not Found!")
+      } else {
+        if (!coupan.isActive) {
+          return sendNotFound(res, "Coupan Code Not Active!")
+        } else {
+          discountPercentage = coupan.couponPerc;
+          console.log(discountPercentage)
+        }
+      }
+    }
+
     const discountAmount = (totalRoomRate * discountPercentage) / 100;
+
+
     const subtotal = totalRoomRate - discountAmount;
     const taxPercentage = 12;
     const taxAmount = (subtotal * taxPercentage) / 100;
@@ -92,7 +109,7 @@ export const createBooking = async (req, res) => {
       numberOfRooms,
       payment: {
         transactionId: transationId,
-        paymentStatus: paymentStatus || "Upcoming",
+        paymentStatus: paymentStatus || "pending",
         paymentMethod: "Razorpay",
         paymentDate: new Date(),
       },

@@ -26,6 +26,20 @@ const watchlistSchema = new mongoose.Schema({
       ref: "Restro",
       default: null
     },
+  ],
+  hall: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Hall",
+      default: null
+    },
+  ],
+  event: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Event",
+      default: null
+    },
   ]
 }, { timestamps: true });
 

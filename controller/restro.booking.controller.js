@@ -1,80 +1,87 @@
 import mongoose from "mongoose";
 import restaurantBookingModel from "../model/restro.booking.model.js";
 import restaurantModel from "../model/hotel.model.js";
-import { sendSuccess, sendError, sendBadRequest } from "../utils/responseUtils.js";
+import { sendSuccess, sendError, sendBadRequest, sendNotFound } from "../utils/responseUtils.js";
 import restroModel from "../model/restro.model.js";
+import coupanModel from "../model/coupan.model.js";
 
-const calculateAutomaticBilling = async (restaurant, numberOfGuests, duration = 60) => {
+const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests, duration = 60) => {
   try {
-    const lastBooking = await restaurantBookingModel
-      .findOne({ restaurantId: restaurant._id })
-      .sort({ createdAt: -1 });
-
+    // Base rate per person
     const costPerPerson = restaurant.averageCostForTwo / 2;
     let baseAmount = costPerPerson * numberOfGuests;
 
-    // Additional hours charge
+    // Extra duration charge
     if (duration > 60) {
       const additionalHours = Math.ceil((duration - 60) / 60);
       baseAmount += baseAmount * 0.1 * additionalHours;
     }
 
+    // Weekend surcharge (apply before discount)
+    const bookingDay = new Date().getDay();
+    const isWeekend = bookingDay === 0 || bookingDay === 6;
+    if (isWeekend) baseAmount *= 1.15;
+
     let discountPercentage = 0;
     let discountDescription = "";
 
-    // Dynamic pricing discount
-    if (lastBooking && lastBooking.billing.baseAmount > baseAmount) {
-      discountPercentage = 10;
-      discountDescription = "Dynamic Pricing Discount";
+    // ✅ Apply coupon if valid
+    if (couponCode) {
+      const coupon = await coupanModel.findOne({ couponCode: couponCode, isActive: true });
+      if (!coupon) throw new Error("Coupon Code Not Found Or Inactive");
+      discountPercentage = coupon.couponPerc;
+      discountDescription = "Coupon Applied";
     }
 
-    // First booking today discount
+    // ✅ Apply "first booking of the day" bonus discount
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const todayBookingsCount = await restaurantBookingModel.countDocuments({
+    const todayBookings = await restaurantBookingModel.countDocuments({
       restaurantId: restaurant._id,
       createdAt: { $gte: todayStart, $lte: todayEnd }
     });
 
-    if (todayBookingsCount === 0) {
-      discountPercentage = Math.max(discountPercentage, 15);
-      discountDescription = "First Booking Today Discount";
+    if (todayBookings === 0) {
+      if (discountPercentage < 15) {
+        discountPercentage = 15;
+        discountDescription = "First Booking of the Day Discount";
+      }
     }
 
-    // Group booking discount
+    // ✅ Apply group discount (if guests >= 6)
     if (numberOfGuests >= 6) {
-      discountPercentage = Math.max(discountPercentage, 20);
-      discountDescription = "Group Booking Discount";
+      if (discountPercentage < 20) {
+        discountPercentage = 20;
+        discountDescription = "Group Booking Discount";
+      }
     }
 
-    // Weekend surcharge
-    const bookingDay = new Date().getDay();
-    const isWeekend = bookingDay === 0 || bookingDay === 6;
-    if (isWeekend) baseAmount *= 1.15;
-
+    // ✅ Apply discount and tax
     const discountAmount = (baseAmount * discountPercentage) / 100;
     const amountAfterDiscount = baseAmount - discountAmount;
-    const taxAmount = (amountAfterDiscount * 12) / 100;
+    const taxPercentage = 12;
+    const taxAmount = (amountAfterDiscount * taxPercentage) / 100;
     const teamService = 10;
     const totalAmount = amountAfterDiscount + taxAmount + teamService;
 
+    // ✅ Return structured billing
     return {
-      baseAmount: Math.round(baseAmount),
+      baseAmount: Math.round(baseAmount * 100) / 100,
       discount: {
         percentage: discountPercentage,
-        amount: Math.round(discountAmount),
+        amount: Math.round(discountAmount * 100) / 100,
         description: discountDescription
       },
       villaDiscount: 0,
-      taxPercentage: 12,
-      taxAmount: Math.round(taxAmount),
+      taxPercentage,
+      taxAmount: Math.round(taxAmount * 100) / 100,
       teamService,
       additionalCharges: [],
       currency: restaurant.currency || "INR",
-      totalAmount: Math.round(totalAmount)
+      totalAmount: Math.round(totalAmount * 100) / 100
     };
   } catch (error) {
     throw new Error(`Billing calculation failed: ${error.message}`);
@@ -97,6 +104,7 @@ export const createRestaurantBooking = async (req, res) => {
       numberOfGuests,
       specialRequests = "",
       guest = {},
+      couponCode,
       payment = {}
     } = req.body;
 
@@ -163,7 +171,7 @@ export const createRestaurantBooking = async (req, res) => {
       return sendError(res, "No tables available for your request", null, 409);
     }
 
-    const billing = await calculateAutomaticBilling(restaurant, numberOfGuests, timeSlot.duration);
+    const billing = await calculateAutomaticBilling(restaurant, couponCode, numberOfGuests, timeSlot.duration);
 
     const isSelfBooking = guest.isMySelf ?? true;
     const guestData = {
@@ -547,8 +555,6 @@ export const updateRestaurantBookingStatus = async (req, res) => {
 };
 
 
-
-
 export const updateRestaurantPaymentStatus = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -675,7 +681,7 @@ export const checkInGuest = async (req, res) => {
   try {
     const { bookingId } = req.params;
 
-    const booking = await restaurantBookingModel.findOne({ bookingId });
+    const booking = await restaurantBookingModel.findOne({ _id: bookingId });
     if (!booking) {
       return sendError(res, "Booking not found", null, 404);
     }
@@ -704,7 +710,7 @@ export const checkOutGuest = async (req, res) => {
   try {
     const { bookingId } = req.params;
 
-    const booking = await restaurantBookingModel.findOne({ bookingId });
+    const booking = await restaurantBookingModel.findOne({ _id: bookingId });
     if (!booking) {
       return sendError(res, "Booking not found", null, 404);
     }
@@ -836,5 +842,69 @@ export const calculateBookingAmount = async (req, res) => {
   } catch (error) {
     console.error("Calculate booking amount error:", error);
     return sendError(res, "Failed to calculate booking amount", error.message);
+  }
+};
+
+//cancel booking from user
+export const cancelMyRestroBooking = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  const userId = req.user._id;
+  const { bookingId } = req.params;
+  const { reason = "", refundAmount = 0 } = req.body;
+
+  try {
+
+    // 1. Validate booking ID
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      await session.abortTransaction();
+      session.endSession();
+      return sendBadRequest(res, "Invalid booking ID format");
+    }
+
+    // 2. Find booking
+    const booking = await restaurantBookingModel.findById(bookingId).session(session);
+    if (!booking) {
+      await session.abortTransaction();
+      session.endSession();
+      return sendError(res, "Booking not found", null, 404);
+    }
+
+
+    // 3. Verify ownership
+    if (booking.userId.toString() !== userId.toString()) {
+      await session.abortTransaction();
+      session.endSession();
+      return sendError(res, "Unauthorized action", null, 403);
+    }
+
+    // 4. Check status
+    if (booking.bookingStatus === "Cancelled") {
+      await session.abortTransaction();
+      session.endSession();
+      return sendBadRequest(res, "Booking is already cancelled");
+    }
+
+    // 5. Update booking
+    booking.bookingStatus = "Cancelled";
+    booking.cancellation = {
+      reason: reason || "Cancelled by user",
+      cancelledAt: new Date(),
+      refundAmount,
+    };
+
+    await booking.save({ session });
+
+    // 6. Commit
+    await session.commitTransaction();
+    session.endSession();
+
+    return sendSuccess(res, "Booking cancelled successfully", booking);
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error("Error While Cancel My Booking:", error.message);
+    return sendError(res, "Error while cancelling booking", error);
   }
 };

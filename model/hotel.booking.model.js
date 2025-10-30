@@ -13,7 +13,7 @@ const hotelBookingSchema = new mongoose.Schema(
 
     bookingStatus: {
       type: String,
-      enum: ["Upcoming", "Completed", "Cancelled", "refunded"],
+      enum: ["pending", "Upcoming", "Completed", "Cancelled", "refunded"],
       default: "pending",
     },
     adminId: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", required: true },

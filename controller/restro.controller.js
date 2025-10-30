@@ -480,3 +480,26 @@ export const deleteRestaurant = async (req, res) => {
     return sendError(res, 500, "Failed to delete restaurant", error.message);
   }
 };
+
+export const resetAllTables = async (req, res) => {
+  try {
+    const { restroId } = req.params;
+
+    const restro = await restroModel.findById(restroId);
+    if (!restro) return sendNotFound(res, "Restaurant not found");
+
+    restro.tableGroups.forEach(group => {
+      group.tables.forEach(table => {
+        table.isBooked = false;
+        table.currentBooking = null;
+      });
+    });
+
+    await restro.save();
+
+    return sendSuccess(res, null, "All tables have been reset to available");
+  } catch (error) {
+    log.error(`Error resetting tables: ${error.message}`);
+    return sendError(res, error, `Error resetting tables: ${error.message}`);
+  }
+};

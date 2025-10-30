@@ -48,12 +48,12 @@ const restaurantBookingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-
+  
     bookingDate: {
       type: Date,
       required: true,
     },
-
+  
     timeSlot: {
       startTime: {
         type: String,

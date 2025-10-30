@@ -23,104 +23,218 @@ export const sendOtpEmail = async (email, name, otp) => {
 
 export const newUserRegister = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, deviceName, ipAddress } = req.body;
 
-    // Check required fields
     if (!name || !email || !password) {
       return sendBadRequest(res, "name, email, password are required");
     }
 
-    // Check if user exists
-    const isExists = await userModel.findOne({ email });
+    let user = await userModel.findOne({ email });
 
-    if (isExists) {
-      const passwordCmp = await bcrypt.compare(password, isExists.password);
-      if (passwordCmp) {
-        log.success(`${isExists.name} Login Successful`);
+    if (user) {
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) return sendBadRequest(res, "Incorrect password");
 
-        // Generate JWT
-        const payload = {
-          _id: isExists._id,
-          name: isExists.name,
-          email: isExists.email,
-          role: isExists.role
-        };
+      const existingSession = user.sessions.find(
+        s => s.deviceName === deviceName && s.ipAddress === ipAddress
+      );
 
-        const token = jwt.sign(payload, process.env.JWT_SECET, { expiresIn: "30d" });
-
-        return sendSuccess(res, { user: isExists, token }, "Login Successful");
+      if (existingSession) {
+        existingSession.status = "active";
+        existingSession.lastUsedAt = new Date();
       } else {
-        return sendBadRequest(res, "Incorrect password");
+        user.sessions.push({
+          deviceName: deviceName || "Unknown Device",
+          ipAddress: ipAddress || req.ip,
+          status: "active",
+          loginAt: new Date(),
+          lastUsedAt: new Date(),
+        });
       }
+
+      await user.save();
+
+      const payload = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      };
+      const token = jwt.sign(payload, process.env.JWT_SECET, { expiresIn: "30d" });
+
+      log.success(`${user.name} Login Successful`);
+      return sendSuccess(res, { user, token }, "Login Successful");
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Generate UI avatar URL
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
 
-    // Create new user
-    const newUser = await userModel.create({
+    const newUser = new userModel({
       name,
       email,
       password: hashedPassword,
-      avatar
+      avatar,
+      sessions: [
+        {
+          deviceName: deviceName || "Unknown Device",
+          ipAddress: ipAddress || req.ip,
+          status: "active",
+          loginAt: new Date(),
+          lastUsedAt: new Date(),
+        },
+      ],
     });
+
     await newUser.save();
-    //new user token generate
+
     const payload = {
       _id: newUser._id,
       name: newUser.name,
       email: newUser.email,
-      role: newUser.role
+      role: newUser.role,
     };
     const token = jwt.sign(payload, process.env.JWT_SECET, { expiresIn: "30d" });
 
-    return sendSuccess(res, {
-      user: newUser,
-      token
-    }, "User created successfully");
+    return sendSuccess(res, { user: newUser, token }, "User created successfully");
   } catch (error) {
     log.error(`Error During Create A New User: ${error.message}`);
     return sendError(res, error, `Error During Create A New User: ${error.message}`);
   }
-}
+};
+
+
+export const getAllUsers = async (req, res) => {
+  try {
+    const { name, email, gender, maritalStatus, city, state, role } = req.query;
+
+    const filter = {};
+
+    if (name) filter.name = { $regex: name, $options: "i" };
+    if (email) filter.email = { $regex: email, $options: "i" };
+    if (gender) filter.gender = gender;
+    if (maritalStatus) filter.maritalStatus = maritalStatus;
+    if (city) filter.city = { $regex: city, $options: "i" };
+    if (state) filter.state = { $regex: state, $options: "i" };
+    if (role) filter.role = role;
+
+    const users = await userModel.find(filter).select("-password -otp -otpExpires");
+
+    return sendSuccess(res, users, "Users fetched successfully");
+  } catch (error) {
+    return sendError(res, error, `Error fetching users: ${error.message}`);
+  }
+};
+
+export const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await userModel.findById(id).select("-password -otp -otpExpires");
+    if (!user) return sendNotFound(res, "User not found");
+
+    return sendSuccess(res, user, "User fetched successfully");
+  } catch (error) {
+    return sendError(res, error, `Error fetching user: ${error.message}`);
+  }
+};
+
+export const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Prevent updating sensitive fields directly
+    delete updates.password;
+    delete updates.email;
+    delete updates.otp;
+    delete updates.otpExpires;
+    String(req.body.gender).toLowerCase();
+    String(req.body.maritalStatus).toLowerCase();
+    const updatedUser = await userModel.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    }).select("-password -otp -otpExpires");
+
+    if (!updatedUser) return sendNotFound(res, "User not found");
+
+    return sendSuccess(res, updatedUser, "User updated successfully");
+  } catch (error) {
+    return sendError(res, error, `Error updating user: ${error.message}`);
+  }
+};
+
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedUser = await userModel.findByIdAndDelete(id);
+    if (!deletedUser) return sendNotFound(res, "User not found");
+
+    return sendSuccess(res, deletedUser, "User deleted successfully");
+  } catch (error) {
+    return sendError(res, error, `Error deleting user: ${error.message}`);
+  }
+};
 
 export const googleLogin = async (req, res) => {
   try {
-    const { email, name, avatar } = req.body;
+    const { email, name, avatar, deviceName, ipAddress } = req.body;
 
     if (!email || !name) {
       return sendBadRequest(res, "Name and email are required");
     }
 
-    // Check if user exists
     let user = await userModel.findOne({ email });
     let isNew = false;
 
     if (user) {
+      const existingSession = user.sessions.find(
+        s => s.deviceName === deviceName && s.ipAddress === ipAddress
+      );
+
+      if (existingSession) {
+        existingSession.status = "active";
+        existingSession.lastUsedAt = new Date();
+      } else {
+        user.sessions.push({
+          deviceName: deviceName || "Unknown Device",
+          ipAddress: ipAddress || req.ip,
+          status: "active",
+          loginAt: new Date(),
+          lastUsedAt: new Date(),
+        });
+      }
+
+      await user.save();
       log.success(`${user.name} login successful`);
     } else {
-      // Create new user
-      user = await userModel.create({
+      user = new userModel({
         name,
         email,
         avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-        password: "SOCIAL_LOGIN", // placeholder password
+        password: "SOCIAL_LOGIN",
+        sessions: [
+          {
+            deviceName: deviceName || "Unknown Device",
+            ipAddress: ipAddress || req.ip,
+            status: "active",
+            loginAt: new Date(),
+            lastUsedAt: new Date(),
+          },
+        ],
       });
+
       await user.save();
       log.success(`${user.name} account created`);
-      isNew = true; // mark as new user
+      isNew = true;
     }
 
-    // Generate JWT token
     const payload = {
       _id: user._id,
       name: user.name,
       email: user.email,
-      role: user.role
+      role: user.role,
     };
     const token = jwt.sign(payload, process.env.JWT_SECET, { expiresIn: "30d" });
 
@@ -131,35 +245,49 @@ export const googleLogin = async (req, res) => {
         ? "New User Registered Successfully With Google Login"
         : "Google Registered User Login Successful"
     );
-
   } catch (error) {
     log.error(`Login/Register error: ${error.message}`);
     return sendError(res, error, `Login/Register error: ${error.message}`);
   }
-}
+};
 
 export const userLogin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceName, ipAddress } = req.body;
 
-    // Validate required fields
     if (!email || !password) {
       return sendBadRequest(res, "Email and password are required");
     }
 
-    // Check if user exists
     const user = await userModel.findOne({ email });
     if (!user) {
       return sendBadRequest(res, "User not found, please register");
     }
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return sendBadRequest(res, "Incorrect password");
     }
 
-    // Generate JWT token
+    const existingSession = user.sessions.find(
+      s => s.deviceName === deviceName && s.ipAddress === ipAddress
+    );
+
+    if (existingSession) {
+      existingSession.status = "active";
+      existingSession.lastUsedAt = new Date();
+    } else {
+      user.sessions.push({
+        deviceName: deviceName || "Unknown Device",
+        ipAddress: ipAddress || req.ip,
+        status: "active",
+        loginAt: new Date(),
+        lastUsedAt: new Date(),
+      });
+    }
+
+    await user.save();
+
     const payload = {
       _id: user._id,
       name: user.name,
@@ -170,13 +298,12 @@ export const userLogin = async (req, res) => {
 
     log.success(`${user.name} Login Successful`);
 
-    return sendSuccess(res, "Login Successful", { user, token });
+    return sendSuccess(res, { user, token }, "Login Successful");
   } catch (error) {
     log.error(`Error During Login: ${error.message}`);
     return sendError(res, error, `Error During Login: ${error.message}`);
   }
-
-}
+};
 
 export const ForgotOtpSend = async (req, res) => {
   try {
@@ -264,6 +391,63 @@ export const ResetPassword = async (req, res) => {
   }
 }
 
+export const changeUserPassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const { _id } = req.user;
+
+    // Validate input
+    if (!oldPassword || !newPassword) {
+      return sendBadRequest(res, "Both oldPassword and newPassword are required.");
+    }
+
+    // Find user
+    const user = await userModel.findById(_id);
+    if (!user) {
+      return sendNotFound(res, "User not found.");
+    }
+
+    // Compare old password
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return sendBadRequest(res, "Old password is incorrect.");
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password and save
+    user.password = hashedPassword;
+    await user.save();
+
+    return sendSuccess(res, null, "Password changed successfully.");
+  } catch (error) {
+    console.error("Error while changing password:", error.message);
+    return sendError(res, "Error while changing password.", error.message);
+  }
+};
+
+export const userLogout = async (req, res) => {
+  try {
+    const { deviceName, ipAddress } = req.body;
+    const { _id } = req.user;
+
+    const user = await userModel.findById(_id);
+    if (!user) return sendNotFound(res, "User not found");
+
+    user.sessions = user.sessions.filter(
+      s => !(s.deviceName === deviceName && s.ipAddress === ipAddress)
+    );
+
+    await user.save();
+
+    return sendSuccess(res, null, "Logout successful and session removed");
+  } catch (error) {
+    log.error(`Error During Logout: ${error.message}`);
+    return sendError(res, error, `Error During Logout: ${error.message}`);
+  }
+};
 
 //profile section controller
 export const getUserProfile = async (req, res) => {
