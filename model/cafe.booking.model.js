@@ -83,7 +83,7 @@ const cafeBookingSchema = new mongoose.Schema(
       transactionId: { type: String, default: "" },
       paymentStatus: {
         type: String,
-        enum: ["pending", "confirmed", "cancelled", "completed", "failed"],
+        enum: ["pending", "confirmed", "cancelled", "completed", "refunded", "failed"],
         default: "pending",
       },
       paymentMethod: { type: String, default: "" },

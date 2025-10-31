@@ -26,7 +26,11 @@ const hotelBookingSchema = new mongoose.Schema(
       state: { type: String, default: "" },
       country: { type: String, default: "" },
     },
-
+    userId: {
+      type: mongoose.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
     hotelId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
     roomId: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
 
@@ -60,7 +64,7 @@ const hotelBookingSchema = new mongoose.Schema(
       transactionId: { type: String, default: "" },
       paymentStatus: {
         type: String,
-        enum: ["pending", "confirmed", "cancelled", "completed", "failed"],
+        enum: ["pending", "confirmed", "cancelled", "completed", "refunded", "failed"],
         default: "pending",
       },
       paymentMethod: { type: String, default: "" },

@@ -6,6 +6,7 @@ import coupanModel from "../model/coupan.model.js";
 
 export const createBooking = async (req, res) => {
   try {
+    const { _id } = req.user
     const { hotelId } = req.params;
     const {
       roomId,
@@ -71,6 +72,7 @@ export const createBooking = async (req, res) => {
 
     // Create booking document
     const booking = new hotelBookingModel({
+      userId: _id,
       guest: {
         isMySelf,
         name: isMySelf ? req.user?.name : name,

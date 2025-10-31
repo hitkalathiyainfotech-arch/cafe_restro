@@ -203,7 +203,7 @@ indexRouter.delete("/deleteTour/:id", deleteTour);
 //payemnt and all booking in single api not model created!!
 indexRouter.get("/allBookings", UserAuth, getMyAllBookings)
 indexRouter.get("/downloadInvoice/:id", UserAuth, downloadBookingInvoice);
-indexRouter.get("/getMyRefundedBooking", getMyRefundBooking)
+indexRouter.get("/getMyRefundedBooking", UserAuth, getMyRefundBooking)
 
 // review
 indexRouter.post("/addReview/:businessId", UserAuth, addReview);
