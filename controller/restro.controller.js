@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import { deleteFromS3, resizeImage, uploadToS3 } from "../middleware/uploadS3.js";
 import restroModel from "../model/restro.model.js";
+import adminModel from "../model/admin.model.js";
 import log from "../utils/logger.js";
 import { sendBadRequest, sendError, sendSuccess } from "../utils/responseUtils.js";
+import { sendNotification } from "../utils/notificatoin.utils.js";
 
 export const createNewRestaurant = async (req, res) => {
   try {
@@ -28,6 +30,16 @@ export const createNewRestaurant = async (req, res) => {
     if (!name?.trim()) return sendBadRequest(res, "Restaurant name is required");
     if (!averageCostForTwo) return sendBadRequest(res, "Average cost for two is required");
     if (!address) return sendBadRequest(res, "Address is required");
+
+    // Check for duplicate restaurant BEFORE uploading images
+    const parsedAddress = typeof address === "string" ? JSON.parse(address) : address;
+    const existingRestaurant = await restroModel.findOne({
+      name: name.trim(),
+      "address.street": parsedAddress?.street || ""
+    });
+    if (existingRestaurant) {
+      return sendBadRequest(res, "A restaurant with this name and address already exists");
+    }
 
     // ---- File uploads ----
     const featuredFile = req.files?.featured?.[0];
@@ -59,7 +71,6 @@ export const createNewRestaurant = async (req, res) => {
 
     // ---- Parse JSON-like fields ----
     const parsed = (v, fallback = []) => (typeof v === "string" ? JSON.parse(v) : v || fallback);
-    const parsedAddress = typeof address === "string" ? JSON.parse(address) : address;
     const parsedContact = typeof contact === "string" ? JSON.parse(contact) : contact;
     const parsedOperatingHours = typeof operatingHours === "string" ? JSON.parse(operatingHours) : operatingHours;
     const parsedTableGroups = parsed(tableGroups).map((group) => ({
@@ -92,6 +103,17 @@ export const createNewRestaurant = async (req, res) => {
     });
 
     await restaurant.save();
+
+    // ✅ Append restaurant ID to admin model
+    if (restaurant.ownerId && restaurant._id) {
+      await adminModel.findByIdAndUpdate(
+        restaurant.ownerId,
+        { $addToSet: { restro: restaurant._id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to update admin restro:", err.message));
+    }
+
+    await sendNotification({ adminId: restaurant.ownerId, title: `New Restro Created ${restaurant.name}`, description: `new create restrop description`, image: images.featured, type: "broadcast" })
 
     log.success(`Restaurant created: ${restaurant.name}`);
     return sendSuccess(res, "Restaurant created successfully", restaurant);
@@ -440,6 +462,15 @@ export const deleteRestaurant = async (req, res) => {
     const { id } = req.params;
     const restaurant = await restroModel.findById(id);
     if (!restaurant) return sendBadRequest(res, "Restaurant not found");
+
+    // ✅ Remove restaurant ID from admin model before deleting
+    if (restaurant.ownerId) {
+      await adminModel.findByIdAndUpdate(
+        restaurant.ownerId,
+        { $pull: { restro: id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to remove restaurant from admin:", err.message));
+    }
 
     const imagesToDelete = [];
 

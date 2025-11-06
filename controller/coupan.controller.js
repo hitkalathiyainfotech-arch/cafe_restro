@@ -1,26 +1,52 @@
 import coupanModel from "../model/coupan.model.js";
+import { sendNotification } from "../utils/notificatoin.utils.js";
 import { sendBadRequest } from "../utils/responseUtils.js";
 
 export const createCoupan = async (req, res) => {
   try {
     const { coupanCode, coupanPerc, coupanExpire } = req.body;
-    console.log(req.body)
+    const adminId = req?.admin?._id;
+
     if (!req.body) {
-      return sendBadRequest(res, "req.body Not found")
-    }
-    const existing = await coupanModel.findOne({ coupanCode: coupanCode.toUpperCase() });
-    if (existing) {
-      return res.status(400).json({ success: false, message: "Coupan code already exists" });
+      return sendBadRequest(res, "req.body Not found");
     }
 
-    const newCoupan = await coupanModel.create({ couponCode: coupanCode, couponPerc: coupanPerc, couponExpire: coupanExpire });
-    await newCoupan.save()
-    res.status(201).json({ success: true, message: "Coupan created successfully", data: newCoupan });
+    const existing = await coupanModel.findOne({
+      couponCode: coupanCode.toUpperCase(),
+    });
+    if (existing) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Coupon code already exists" });
+    }
+
+    const newCoupan = await coupanModel.create({
+      couponCode: coupanCode.toUpperCase(),
+      couponPerc: coupanPerc,
+      couponExpire: coupanExpire,
+    });
+
+    await sendNotification({
+      adminId,
+      title: `New Coupon Created: ${coupanCode}`,
+      description: "Coupon code description",
+      image: null,
+      type: "broadcast",
+    });
+
+    res
+      .status(201)
+      .json({
+        success: true,
+        message: "Coupon created successfully",
+        data: newCoupan,
+      });
   } catch (error) {
-    console.log("error" + error.message)
+    console.log("Error:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 export const getAllCoupans = async (req, res) => {
   try {

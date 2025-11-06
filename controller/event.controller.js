@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { deleteFromS3, uploadToS3 } from "../middleware/uploadS3.js";
 import eventModel from "../model/event.model.js";
+import adminModel from "../model/admin.model.js";
 import log from "../utils/logger.js";
 import { sendError, sendSuccess } from "../utils/responseUtils.js";
 
@@ -78,6 +79,15 @@ export const addNewEvent = async (req, res) => {
     });
 
     const savedEvent = await newEvent.save();
+
+    // ✅ Append event ID to admin model
+    if (savedEvent.adminId && savedEvent._id) {
+      await adminModel.findByIdAndUpdate(
+        savedEvent.adminId,
+        { $addToSet: { events: savedEvent._id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to update admin events:", err.message));
+    }
 
     log.info(`Event created successfully: ${savedEvent._id} by admin: ${adminId}`);
     return sendSuccess(res, "Event created successfully", savedEvent, 201);
@@ -295,6 +305,15 @@ export const deleteEvent = async (req, res) => {
 
     if (!event) {
       return sendError(res, "Event not found");
+    }
+
+    // ✅ Remove event ID from admin model before deleting
+    if (event.adminId) {
+      await adminModel.findByIdAndUpdate(
+        event.adminId,
+        { $pull: { events: id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to remove event from admin:", err.message));
     }
 
     if (event.eventImage) {

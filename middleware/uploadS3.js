@@ -45,12 +45,6 @@ export const uploadToS3 = async (buffer, filename, mimetype, folder = "uploads")
 };
 
 
-/**
- * Optional helper: resize image buffer with Sharp before uploading
- * @param {Buffer} buffer 
- * @param {Object} options - { width, height, quality }
- * @returns {Buffer}
- */
 export const resizeImage = async (buffer, options = { width: 1024, height: 768, quality: 80 }) => {
   try {
     return await sharp(buffer)

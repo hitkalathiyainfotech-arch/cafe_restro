@@ -34,6 +34,34 @@ const AdminSchema = new mongoose.Schema({
       ref: "Restro",
       default: null
     }
+  ],
+  halls: [
+    {
+      type: mongoose.Types.ObjectId,
+      ref: "Hall",
+      default: null
+    }
+  ],
+  tours: [
+    {
+      type: mongoose.Types.ObjectId,
+      ref: "Tour",
+      default: null
+    }
+  ],
+  stays: [
+    {
+      type: mongoose.Types.ObjectId,
+      ref: "Stay",
+      default: null
+    }
+  ],
+  events: [
+    {
+      type: mongoose.Types.ObjectId,
+      ref: "Event",
+      default: null
+    }
   ]
 })
 

@@ -4,20 +4,20 @@ import restaurantModel from "../model/hotel.model.js";
 import { sendSuccess, sendError, sendBadRequest, sendNotFound } from "../utils/responseUtils.js";
 import restroModel from "../model/restro.model.js";
 import coupanModel from "../model/coupan.model.js";
+import { sendNotification } from "../utils/notificatoin.utils.js";
 
 const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests, duration = 60) => {
   try {
-    // Base rate per person
+
     const costPerPerson = restaurant.averageCostForTwo / 2;
     let baseAmount = costPerPerson * numberOfGuests;
 
-    // Extra duration charge
     if (duration > 60) {
       const additionalHours = Math.ceil((duration - 60) / 60);
       baseAmount += baseAmount * 0.1 * additionalHours;
     }
 
-    // Weekend surcharge (apply before discount)
+
     const bookingDay = new Date().getDay();
     const isWeekend = bookingDay === 0 || bookingDay === 6;
     if (isWeekend) baseAmount *= 1.15;
@@ -25,7 +25,7 @@ const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests,
     let discountPercentage = 0;
     let discountDescription = "";
 
-    // ✅ Apply coupon if valid
+
     if (couponCode) {
       const coupon = await coupanModel.findOne({ couponCode: couponCode, isActive: true });
       if (!coupon) throw new Error("Coupon Code Not Found Or Inactive");
@@ -33,7 +33,7 @@ const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests,
       discountDescription = "Coupon Applied";
     }
 
-    // ✅ Apply "first booking of the day" bonus discount
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -51,7 +51,7 @@ const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests,
       }
     }
 
-    // ✅ Apply group discount (if guests >= 6)
+
     if (numberOfGuests >= 6) {
       if (discountPercentage < 20) {
         discountPercentage = 20;
@@ -59,7 +59,6 @@ const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests,
       }
     }
 
-    // ✅ Apply discount and tax
     const discountAmount = (baseAmount * discountPercentage) / 100;
     const amountAfterDiscount = baseAmount - discountAmount;
     const taxPercentage = 12;
@@ -67,7 +66,6 @@ const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests,
     const teamService = 10;
     const totalAmount = amountAfterDiscount + taxAmount + teamService;
 
-    // ✅ Return structured billing
     return {
       baseAmount: Math.round(baseAmount * 100) / 100,
       discount: {
@@ -222,6 +220,10 @@ export const createRestaurantBooking = async (req, res) => {
       },
       bookingStatus: transactionId ? "Confirmed" : "Pending"
     };
+
+    await sendNotification({
+      adminId: restaurant.ownerId, title: `Your Booking create on ${restaurant.name}`, description: `your resro booking description`, image: restaurant.images.featured || null, type: "single", userId: userId
+    })
 
     const booking = new restaurantBookingModel(bookingData);
     await booking.save({ session });
@@ -450,18 +452,17 @@ export const updateRestaurantBookingStatus = async (req, res) => {
     const { bookingId } = req.params;
     const { status, reason = "", refundAmount = 0 } = req.body;
 
-    // 🧩 Validate booking ID
+
     if (!mongoose.Types.ObjectId.isValid(bookingId)) {
       return sendBadRequest(res, "Invalid booking ID format");
     }
 
-    // 🧩 Fetch booking
     const booking = await restaurantBookingModel.findById(bookingId).session(session);
     if (!booking) {
       return sendError(res, "Booking not found", null, 404);
     }
 
-    // 🧩 Define allowed statuses
+
     const VALID_STATUSES = [
       "Pending",
       "Confirmed",
@@ -483,7 +484,6 @@ export const updateRestaurantBookingStatus = async (req, res) => {
       );
     }
 
-    // 🧩 Handle status transitions
     switch (status) {
       case "Cancelled":
         booking.bookingStatus = "Cancelled";
@@ -519,7 +519,6 @@ export const updateRestaurantBookingStatus = async (req, res) => {
 
     await booking.save({ session });
 
-    // 🧩 If cancelled or refunded, free the table
     if (["Cancelled", "Refunded"].includes(status)) {
       const restaurant = await restroModel.findById(booking.restaurantId).session(session);
       if (restaurant) {

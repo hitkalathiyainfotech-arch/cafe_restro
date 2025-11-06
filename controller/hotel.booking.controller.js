@@ -3,17 +3,20 @@ import hotelBookingModel from "../model/hotel.booking.model.js";
 import hotelModel from "../model/hotel.model.js";
 import { sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
 import coupanModel from "../model/coupan.model.js";
+import { sendNotification } from "../utils/notificatoin.utils.js";
+import userModel from "../model/user.model.js";
 
 export const createBooking = async (req, res) => {
   try {
-    const { _id } = req.user
+    const userId = req.user?._id;
     const { hotelId } = req.params;
+
     const {
       roomId,
       checkInDate,
       checkOutDate,
-      adults,
-      isMySelf,
+      adults = 1,
+      isMySelf = true,
       name,
       email,
       phone,
@@ -25,43 +28,43 @@ export const createBooking = async (req, res) => {
       infants = 0,
       numberOfRooms = 1,
       specialRequests = "",
-      transationId = "",
-      paymentStatus
+      transactionId = "",
+      paymentStatus = "pending"
     } = req.body;
 
-    const guestId = req.user?._id;
-    // Validate hotel
     const hotel = await hotelModel.findById(hotelId);
     if (!hotel) return res.status(404).json({ success: false, message: "Hotel not found" });
 
-    // Validate room
     const room = hotel.rooms.id(roomId);
     if (!room) return res.status(404).json({ success: false, message: "Room not found" });
 
-    // Calculate number of nights
-    const numberOfNights =
-      Math.ceil((new Date(checkOutDate) - new Date(checkInDate)) / (1000 * 60 * 60 * 24)) || 1;
+    const parseDate = (d) => {
+      const [day, month, year] = d.split("-");
+      return new Date(`${year}-${month}-${day}`);
+    };
 
-    // Pricing calculation
+    const checkIn = parseDate(checkInDate);
+    const checkOut = parseDate(checkOutDate);
+
+    const numberOfNights = Math.max(
+      1,
+      Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
+    );
+
     const roomRatePerNight = room.pricePerNight;
     const totalRoomRate = roomRatePerNight * numberOfNights * numberOfRooms;
+
     let discountPercentage = 0;
+    let discountAmount = 0;
+
     if (coupanCode) {
-      const coupan = await coupanModel.findOne({ couponCode: coupanCode })
-      if (!coupan) {
-        return sendNotFound(res, "Coupon Code Not Found!")
-      } else {
-        if (!coupan.isActive) {
-          return sendNotFound(res, "Coupan Code Not Active!")
-        } else {
-          discountPercentage = coupan.couponPerc;
-          console.log(discountPercentage)
-        }
-      }
+      const coupon = await coupanModel.findOne({ couponCode: coupanCode });
+      if (!coupon) return sendNotFound(res, "Coupon Code Not Found!");
+      if (!coupon.isActive) return sendNotFound(res, "Coupon Code Not Active!");
+
+      discountPercentage = coupon.couponPerc || 0;
+      discountAmount = (totalRoomRate * discountPercentage) / 100;
     }
-
-    const discountAmount = (totalRoomRate * discountPercentage) / 100;
-
 
     const subtotal = totalRoomRate - discountAmount;
     const taxPercentage = 12;
@@ -69,26 +72,40 @@ export const createBooking = async (req, res) => {
     const serviceFee = 100;
     const platformFee = 50;
     const totalAmount = subtotal + taxAmount + serviceFee + platformFee;
+    let user = {};
 
-    // Create booking document
+    if (isMySelf) {
+      const dbUser = await userModel.findById(userId);
+      user = {
+        name: dbUser.name,
+        email: dbUser.email,
+        phone: dbUser.contactNo,
+        address: dbUser.address,
+        state: dbUser.state,
+        country: dbUser.nationality,
+      };
+    }
+
+
     const booking = new hotelBookingModel({
-      userId: _id,
-      guest: {
-        isMySelf,
-        name: isMySelf ? req.user?.name : name,
-        email: isMySelf ? req.user?.email : email,
-        phone: isMySelf ? req.user?.phone : phone,
-        address: isMySelf ? req.user?.address : address,
-        state: isMySelf ? req.user?.state : state,
-        country: isMySelf ? req.user?.country : country,
-      },
+      userId,
       hotelId,
       roomId,
       adminId: hotel.adminId,
+      numberOfRooms,
       bookingDates: {
-        checkInDate,
-        checkOutDate,
+        checkInDate: checkIn,
+        checkOutDate: checkOut,
         numberOfNights,
+      },
+      guest: {
+        isMySelf,
+        name: isMySelf ? user.name : name,
+        email: isMySelf ? user.email : email,
+        phone: isMySelf ? user.contactNo : phone,
+        address: isMySelf ? user.address : address,
+        state: isMySelf ? user.state : state,
+        country: isMySelf ? user.nationality : country,
       },
       guestInfo: {
         adults,
@@ -108,77 +125,131 @@ export const createBooking = async (req, res) => {
         totalAmount,
         currency: "INR",
       },
-      numberOfRooms,
       payment: {
-        transactionId: transationId,
-        paymentStatus: paymentStatus || "pending",
+        transactionId,
+        paymentStatus,
         paymentMethod: "Razorpay",
         paymentDate: new Date(),
       },
-      userId: guestId,
     });
 
-    await booking.save();
+    const savedBooking = await booking.save();
+
+
+    await sendNotification({
+      adminId: hotel.adminId,
+      title: `New Booking Created`,
+      description: `Booking ID: ${savedBooking._id}\nHotel: ${hotel.name}\nDates: ${checkInDate} to ${checkOutDate}`,
+      image: hotel.images[0] || null,
+      type: "single",
+      userId,
+    }).catch((err) => console.error("Notification Error:", err.message));
 
     return res.status(201).json({
       success: true,
-      booking,
+      message: "Booking created successfully",
+      result: savedBooking,
     });
   } catch (err) {
-    console.error(err);
+    console.error("createBooking Error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
 
+
 export const previewHotelBooking = async (req, res) => {
   try {
-    const { hotelId } = req.params; // from URL
-    const { roomId, checkInDate, checkOutDate, numberOfRooms = 1 } = req.body;
+    const { hotelId } = req.params;
+    const { roomId, checkInDate, checkOutDate, numberOfRooms = 1, adults = 1 } = req.body;
 
-    // Validate hotel
+    if (!hotelId || !roomId || !checkInDate || !checkOutDate) {
+      return res.status(400).json({ success: false, message: "Missing required booking details" });
+    }
+
+    // Parse safe dates (handle DD-MM-YYYY or YYYY-MM-DD)
+    const parseDate = (dateStr) => {
+      const [d, m, y] = dateStr.includes("-") ? dateStr.split("-") : [];
+      return new Date(`${y}-${m}-${d}`); // Convert to YYYY-MM-DD
+    };
+
+    const startDate = parseDate(checkInDate);
+    const endDate = parseDate(checkOutDate);
+
+    if (isNaN(startDate) || isNaN(endDate)) {
+      return res.status(400).json({ success: false, message: "Invalid date format (use DD-MM-YYYY)" });
+    }
+
+    if (endDate <= startDate) {
+      return res.status(400).json({ success: false, message: "Check-out date must be after check-in date" });
+    }
+
+    // Fetch hotel and room
     const hotel = await hotelModel.findById(hotelId);
     if (!hotel) return res.status(404).json({ success: false, message: "Hotel not found" });
 
-    // Validate room
     const room = hotel.rooms.id(roomId);
     if (!room) return res.status(404).json({ success: false, message: "Room not found" });
 
-    // Calculate number of nights
-    const numberOfNights =
-      Math.ceil((new Date(checkOutDate) - new Date(checkInDate)) / (1000 * 60 * 60 * 24)) || 1;
+    // Calculate stay duration
+    const numberOfNights = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
 
-    // Pricing calculation
+    // Pricing logic
+    const TAX_PERCENT = 12;
+    const SERVICE_FEE = 100;
+    const PLATFORM_FEE = 50;
+    const DISCOUNT_PERCENT = 0;
+
     const roomRatePerNight = room.pricePerNight;
     const totalRoomRate = roomRatePerNight * numberOfNights * numberOfRooms;
-    const discountPercentage = 0; // can be dynamic
-    const discountAmount = (totalRoomRate * discountPercentage) / 100;
+    const discountAmount = (totalRoomRate * DISCOUNT_PERCENT) / 100;
     const subtotal = totalRoomRate - discountAmount;
-    const taxPercentage = 12;
-    const taxAmount = (subtotal * taxPercentage) / 100;
-    const serviceFee = 100;
-    const platformFee = 50;
-    const totalAmount = subtotal + taxAmount + serviceFee + platformFee;
+    const taxAmount = (subtotal * TAX_PERCENT) / 100;
+    const totalAmount = subtotal + taxAmount + SERVICE_FEE + PLATFORM_FEE;
 
     return res.status(200).json({
       success: true,
+      message: "Booking preview generated successfully",
       result: {
-        numberOfRooms,
-        numberOfNights,
-        roomRatePerNight,
-        totalRoomRate,
-        discountPercentage,
-        discountAmount,
-        taxPercentage,
-        taxAmount,
-        serviceFee,
-        platformFee,
-        totalAmount,
-        currency: "INR",
+        hotel: {
+          id: hotel._id,
+          name: hotel.name,
+          city: hotel.address?.city,
+        },
+        room: {
+          id: room._id,
+          type: room.type,
+          pricePerNight: roomRatePerNight,
+          maxGuests: room.maxGuests,
+          images: room.images || [],
+        },
+        booking: {
+          checkInDate,
+          checkOutDate,
+          numberOfNights,
+          numberOfRooms,
+          adults,
+        },
+        costBreakdown: {
+          totalRoomRate,
+          discountPercent: DISCOUNT_PERCENT,
+          discountAmount,
+          subtotal,
+          taxPercent: TAX_PERCENT,
+          taxAmount,
+          serviceFee: SERVICE_FEE,
+          platformFee: PLATFORM_FEE,
+          totalAmount: Number(totalAmount.toFixed(2)),
+          currency: "INR",
+        },
       },
     });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error("previewHotelBooking Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate booking preview",
+      error: error.message,
+    });
   }
 };
 
@@ -186,12 +257,12 @@ export const previewHotelBooking = async (req, res) => {
 export const getMyHotelBookings = async (req, res) => {
   try {
     const guestId = req.user?._id;
-
+    console.log(guestId)
     const bookings = await hotelBookingModel
-      .find({ guestId })
+      .find({ userId: guestId })
       .populate("hotelId", "name address location")
       .populate("roomId")
-      .populate("guestId")
+      .populate("userId")
       .sort({ createdAt: -1 });
 
     return sendSuccess(res, `Booking fetching successfull`, bookings);
@@ -206,21 +277,26 @@ export const hotelAdminBookings = async (req, res) => {
   try {
     const adminId = req.admin?._id;
 
+    if (!adminId) {
+      return sendError(res, 400, "Admin ID not found");
+    }
 
+    const hotelBookings = await hotelBookingModel.find({ adminId });
 
-
+    return sendSuccess(res, "Bookings fetched successfully", hotelBookings);
   } catch (error) {
     log.error(error.message);
-    return sendSuccess(res, 500, "Failed to fetch bookings", error);
+    return sendError(res, 500, "Failed to fetch bookings", error.message);
   }
-}
+};
 
-export const updateHotelBookingStatus = async (req, res) => {
+
+export const updateHotelPaymentStatus = async (req, res) => {
   try {
     const { status } = req.body;
     const { bookingId } = req.params;
 
-    const validStatuses = ["Upcoming", "Completed", "Cancelled", "refunded"];
+    const validStatuses = ["pending", "confirmed", "cancelled", "completed", "refunded", "failed"];
 
     if (!validStatuses.includes(status)) {
       return sendError(res, 400, "Invalid status value");
@@ -242,3 +318,32 @@ export const updateHotelBookingStatus = async (req, res) => {
     return sendError(res, 500, "Failed to update booking status", error);
   }
 }
+
+export const updateHotelBookingStatus = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+    const { id } = req.params;
+    const { status } = req.query;
+    console.log("dbeqyhvdb")
+    const validStatuses = ["pending", "upcoming", "completed", "cancelled", "refunded"];
+
+    if (!validStatuses.includes(status.toLowerCase())) {
+      return sendError(res, 400, "Invalid booking status");
+    }
+    // Find booking
+    const booking = await hotelBookingModel.findOne({ _id: id, adminId });
+    if (!booking) {
+      return sendError(res, 404, "Booking not found or not authorized");
+    }
+
+    // Update and save
+    booking.bookingStatus = status.toLowerCase();
+    await booking.save();
+
+
+    return sendSuccess(res, "Booking status updated successfully", booking);
+  } catch (error) {
+    log.error(error.message);
+    return sendError(res, 500, "Failed to update booking status", error.message);
+  }
+};

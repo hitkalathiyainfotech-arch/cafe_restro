@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import { resizeImage, uploadToS3 } from "../middleware/uploadS3.js";
 import hallModel from "../model/hall.model.js";
+import adminModel from "../model/admin.model.js";
 import userModel from "../model/user.model.js";
 import { sendBadRequest, sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
+import log from "../utils/logger.js";
 
 
 // In your controller - CHANGE THIS:
@@ -31,6 +33,12 @@ export const createHall = async (req, res) => {
     // Validation
     if (!name?.trim()) return sendBadRequest(res, "Hall name is required");
     if (!price || price <= 0) return sendBadRequest(res, "Valid price is required");
+
+    // Check for duplicate hall BEFORE uploading images
+    const existingHall = await hallModel.findOne({ name: name.trim() });
+    if (existingHall) {
+      return sendBadRequest(res, "A hall with this name already exists");
+    }
 
     // ---- File uploads - USE EXACT SAME FIELD NAMES ----
     const featuredFile = req.files?.featured?.[0];
@@ -76,6 +84,15 @@ export const createHall = async (req, res) => {
     });
 
     await hall.save();
+
+    // ✅ Append hall ID to admin model
+    if (hall.adminId && hall._id) {
+      await adminModel.findByIdAndUpdate(
+        hall.adminId,
+        { $addToSet: { halls: hall._id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to update admin halls:", err.message));
+    }
 
     console.log(`Hall created: ${hall.name}`);
     return sendSuccess(res, "Hall created successfully", hall);
@@ -365,6 +382,15 @@ export const deleteHall = async (req, res) => {
       });
     }
 
+    // ✅ Remove hall ID from admin model before deleting
+    if (hall.adminId) {
+      await adminModel.findByIdAndUpdate(
+        hall.adminId,
+        { $pull: { halls: req.params.id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to remove hall from admin:", err.message));
+    }
+
     // Delete images from S3
     if (hall.images.featuredImage) {
       await deleteFromS3(hall.images.featuredImage);
@@ -453,7 +479,7 @@ export const getPreviewBillingOfHall = async (req, res) => {
     if (!hallId || !mongoose.Types.ObjectId.isValid(hallId)) {
       return sendBadRequest(res, "Something went wrong with hallId");
     }
-    
+
     // Convert numberOfday to number and validate
     const numberOfDays = parseInt(numberOfday);
     if (isNaN(numberOfDays) || numberOfDays <= 0) {
@@ -470,10 +496,10 @@ export const getPreviewBillingOfHall = async (req, res) => {
     let subTotal = perDayHallPrice * numberOfDays;
     let taxPercentage = 12;
     let serviceFee = 100;
-    
+
     // Calculate tax amount
     let taxAmount = (subTotal * taxPercentage) / 100;
-    
+
     // Calculate total amount
     let totalAmount = subTotal + taxAmount + serviceFee;
 

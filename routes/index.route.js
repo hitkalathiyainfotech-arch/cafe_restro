@@ -3,9 +3,10 @@ import { ForgotOtpSend, ResetPassword, VerifyOtp, changeUserPassword, deleteUser
 import { UserAuth } from '../middleware/UserAuth.js';
 import { adminLogin, adminUpdate, deleteAdmin, getAdminById, getAllAdmins, newAdminRegister } from '../controller/admin.controller.js';
 import { AdminAuth } from '../middleware/AdminAuth.js';
-import { createNewHotel, deleteHotels, getAllHotels, getHotelById } from '../controller/hotel.controller.js';
+import { createNewHotel, deleteHotels, getAllHotels, getCitySuggestions, getHotelByCityName, getHotelById } from '../controller/hotel.controller.js';
 import { handleMulterErrors, processAndUploadImages, uploadFiles } from '../middleware/multer.middleware.js';
-import { createBooking, getMyHotelBookings, hotelAdminBookings, previewHotelBooking, updateHotelBookingStatus, } from '../controller/hotel.booking.controller.js';
+import { validateHotelDuplicate } from '../middleware/validateHotelDuplicate.js';
+import { createBooking, getMyHotelBookings, hotelAdminBookings, previewHotelBooking, updateHotelBookingStatus, updateHotelPaymentStatus, } from '../controller/hotel.booking.controller.js';
 import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
 import log from '../utils/logger.js'
 import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
@@ -23,6 +24,9 @@ import { createTour, deleteTour, getAllTours, getBestOfferTours, getTourById, up
 import { createCoupan, deleteCoupan, getAllCoupans, getCoupanById, toggleCoupanStatus, updateCoupan } from '../controller/coupan.controller.js';
 import { getMyAllBookings, getMyRefundBooking } from '../controller/payments.controller.js';
 import { downloadBookingInvoice } from '../controller/invoice.controller.js';
+import { getTrendingDestinations, WhatsNew } from '../controller/home.controller.js';
+import { createNotification, deleteNotification, getAllNotifications, getMyNotifications, getNotificationById, updateNotification } from '../controller/notification.controller.js';
+import { createStay, deleteStay, getAllStays, getStayById, updateStay } from '../controller/stay.controller.js';
 // import { addReview, getMyAllReviews } from '../controller/review.controller.js';
 
 const indexRouter = express.Router();
@@ -53,19 +57,30 @@ indexRouter.get("/getAdminById/:adminId", getAdminById);
 indexRouter.patch("/adminUpdate/:adminId", adminUpdate);
 indexRouter.delete("/deleteAdmin/:adminId", deleteAdmin);
 
+//home Page api's
+indexRouter.get("/WhatsNew", WhatsNew)
+indexRouter.get('/trending-destinations', getTrendingDestinations);
+
+
+
+
 //hotel section
-indexRouter.post("/createNewHotel", AdminAuth, uploadFiles, processAndUploadImages, handleMulterErrors, createNewHotel);
+indexRouter.post("/createNewHotel", AdminAuth, uploadFiles, handleMulterErrors, processAndUploadImages, createNewHotel);
 indexRouter.get("/getAllHotels", AdminAuth, getAllHotels);
 indexRouter.get("/getHotelById/:hotelId", getHotelById);
 // indexRouter.patch("/updateHotel",AdminAuth, updateHotel);
 indexRouter.delete("/deleteHotel/:hotelId", AdminAuth, deleteHotels);
+//gethotelBy city name
+indexRouter.get("/getHotelByCityName/:name", getHotelByCityName);
+indexRouter.get("/city-suggestions", getCitySuggestions);
 
 //hotel. booking section
 indexRouter.post("/hotel/createBooking/:hotelId", UserAuth, createBooking);
 indexRouter.post("/hotel/previewBooking/:hotelId", UserAuth, previewHotelBooking);
 indexRouter.get("/hotel/MyBookings", UserAuth, getMyHotelBookings);
 indexRouter.get("/HotelAdminBookings", AdminAuth, hotelAdminBookings);
-indexRouter.patch("/hotel/statusUpdate/:bookingId", AdminAuth, updateHotelBookingStatus);
+indexRouter.patch("/hotel/statusUpdate/:bookingId", updateHotelPaymentStatus);
+indexRouter.get("/updateBookingStatus/:id", AdminAuth, updateHotelBookingStatus)
 
 //watchlist
 indexRouter.post("/addToWatchlist", UserAuth, addToWatchlist);
@@ -213,12 +228,40 @@ indexRouter.delete("/review/delete/:reviewId", UserAuth, deleteReview);
 indexRouter.get("/review/business/:businessId", getBusinessReviews);
 indexRouter.get("/getAllReviews", AdminAuth, getAllReviews);
 
-indexRouter.post("/createCoupan", createCoupan);
+//coupon section
+indexRouter.post("/createCoupan", AdminAuth, createCoupan);
 indexRouter.get("/getAllCoupans", getAllCoupans);
 indexRouter.get("/getCoupanById/:id", getCoupanById);
 indexRouter.put("/updateCoupan/:id", updateCoupan);
 indexRouter.delete("/deleteCoupan/:id", deleteCoupan);
 indexRouter.patch("/toggleCoupanStatus/:id", toggleCoupanStatus);
+
+indexRouter.post("/createStay", upload.fields([{ name: "stayImage", maxCount: 1 }]), AdminAuth, createStay);
+indexRouter.put("/updateStay/:id", AdminAuth, upload.fields([{ name: "stayImage", maxCount: 1 }]), updateStay);
+indexRouter.delete("/deleteStay/:id", AdminAuth, deleteStay);
+// indexRouter.get("/getAdminStays", AdminAuth, getAdminStays);
+
+// ----------------- USER ROUTES ----------------- //
+indexRouter.get("/getAllStays", UserAuth, getAllStays);
+indexRouter.get("/getStayById/:id", UserAuth, getStayById);
+
+
+
+
+// notification section & routes
+indexRouter.post("/createNotification", AdminAuth, createNotification);
+indexRouter.get("/getAllNotifications", AdminAuth, getAllNotifications);
+indexRouter.get("/getNotificationById/:id", getNotificationById);
+indexRouter.put("/updateNotification/:id", AdminAuth, updateNotification);
+indexRouter.delete("/deleteNotification/:id", AdminAuth, deleteNotification);
+
+// Users can view their notifications
+indexRouter.get("/my/notification/list", UserAuth, getMyNotifications);
+
+
+
+
+
 
 //all list out of S3 images
 indexRouter.get("/s3/list", async (req, res) => {
@@ -261,7 +304,7 @@ indexRouter.delete("/s3/delete-multiple", async (req, res) => {
         const key = url.split(".amazonaws.com/")[1];
         return key || null;
       })
-      .filter(Boolean); // Remove nulls
+      .filter(Boolean);
 
     if (keys.length === 0) {
       return sendBadRequest(res, "No valid S3 keys found in images array");

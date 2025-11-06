@@ -1,5 +1,5 @@
 import log from '../utils/logger.js'
-import { sendBadRequest, sendError, sendSuccess } from "../utils/responseUtils.js";
+import { sendBadRequest, sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
 import adminModel from "../model/admin.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";

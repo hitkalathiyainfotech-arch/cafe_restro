@@ -1,7 +1,9 @@
 import tourModel from "../model/tour.model.js";
+import adminModel from "../model/admin.model.js";
 import { upload, uploadToS3, resizeImage, deleteFromS3 } from "../middleware/uploadS3.js";
 import mongoose from "mongoose";
 import { sendBadRequest } from "../utils/responseUtils.js";
+import log from "../utils/logger.js";
 
 // Middleware for handling file upload
 export const uploadTourImage = upload.single('tourImage');
@@ -27,6 +29,22 @@ export const createTour = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Admin ID is required"
+      });
+    }
+
+    if (!tourName?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Tour name is required"
+      });
+    }
+
+    // Check for duplicate tour BEFORE uploading images
+    const existingTour = await tourModel.findOne({ tourName: tourName.trim() });
+    if (existingTour) {
+      return res.status(400).json({
+        success: false,
+        message: "A tour with this name already exists"
       });
     }
 
@@ -82,6 +100,15 @@ export const createTour = async (req, res) => {
     });
 
     const savedTour = await newTour.save();
+
+    // ✅ Append tour ID to admin model
+    if (savedTour.adminId && savedTour._id) {
+      await adminModel.findByIdAndUpdate(
+        savedTour.adminId,
+        { $addToSet: { tours: savedTour._id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to update admin tours:", err.message));
+    }
 
     res.status(201).json({
       success: true,
@@ -292,6 +319,15 @@ export const deleteTour = async (req, res) => {
         success: false,
         message: "Tour not found"
       });
+    }
+
+    // ✅ Remove tour ID from admin model before deleting
+    if (tour.adminId) {
+      await adminModel.findByIdAndUpdate(
+        tour.adminId,
+        { $pull: { tours: id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to remove tour from admin:", err.message));
     }
 
     // Delete image from S3 if exists

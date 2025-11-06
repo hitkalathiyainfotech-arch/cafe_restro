@@ -2,6 +2,7 @@ import multer from "multer";
 import { sendBadRequest } from "../utils/responseUtils.js";
 import { uploadToS3, resizeImage } from "./uploadS3.js"; // your S3 helper
 import sharp from "sharp";
+import hotelModel from "../model/hotel.model.js";
 
 // 1️⃣ Multer memory storage
 const storage = multer.memoryStorage();
@@ -16,22 +17,38 @@ export const uploadFiles = multer({
     }
     cb(null, true);
   },
-}).any(); // allow dynamic field names like roomImages[0], roomImages[1], hotelImages
+}).any();
 
 // 3️⃣ Middleware to normalize & upload images to S3
+// NOTE: Check for duplicate hotel BEFORE uploading to S3 to prevent orphaned images
 export const processAndUploadImages = async (req, res, next) => {
   try {
+    // Check for duplicate hotel BEFORE uploading images
+    const name = req.body?.name;
+    if (name) {
+      const existingHotel = await hotelModel.findOne({ name: name.trim() });
+      if (existingHotel) {
+        return sendBadRequest(res, "Hotel already exists");
+      }
+    }
+
     if (!req.files || req.files.length === 0) return next();
 
     const hotelImagesFiles = [];
-    const roomImagesFiles = [];
+    const roomImageGroups = {}; // { "0": [file1, file2], "1": [file3] }
 
-    // Separate hotelImages vs roomImages
+    // Separate hotelImages vs roomImages and group room images by index
     req.files.forEach((file) => {
-      if (file.fieldname.startsWith("roomImages")) {
-        roomImagesFiles.push(file);
-      } else if (file.fieldname === "hotelImages") {
+      if (file.fieldname === "hotelImages") {
         hotelImagesFiles.push(file);
+      } else if (file.fieldname.startsWith("roomImages")) {
+        // Support both "roomImages_0" and "roomImages-0" naming
+        const match = file.fieldname.match(/^roomImages[-_](\d+)$/);
+        if (match) {
+          const roomIndex = match[1];
+          if (!roomImageGroups[roomIndex]) roomImageGroups[roomIndex] = [];
+          roomImageGroups[roomIndex].push(file);
+        }
       }
     });
 
@@ -43,13 +60,16 @@ export const processAndUploadImages = async (req, res, next) => {
       })
     );
 
-    // 2️⃣ Upload room images to S3
-    req.files.roomImages = await Promise.all(
-      roomImagesFiles.map(async (file) => {
-        const buffer = await resizeImage(file.buffer, { width: 800, height: 600, quality: 80 });
-        return await uploadToS3(buffer, file.originalname, file.mimetype, "rooms");
-      })
-    );
+    // 2️⃣ Upload room images to S3 grouped by room index
+    req.files.roomImages = {};
+    for (const [roomIndex, files] of Object.entries(roomImageGroups)) {
+      req.files.roomImages[roomIndex] = await Promise.all(
+        files.map(async (file) => {
+          const buffer = await resizeImage(file.buffer, { width: 800, height: 600, quality: 80 });
+          return await uploadToS3(buffer, file.originalname, file.mimetype, "rooms");
+        })
+      );
+    }
 
     next();
   } catch (error) {

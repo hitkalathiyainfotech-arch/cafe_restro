@@ -1,7 +1,10 @@
 import mongoose from "mongoose";
 import { deleteFromS3, resizeImage, uploadToS3 } from "../middleware/uploadS3.js";
 import cafeModel from "../model/cafe.model.js";
-
+import adminModel from "../model/admin.model.js";
+import { sendNotification } from "../utils/notificatoin.utils.js";
+import log from "../utils/logger.js";
+import { sendNotFound } from '../utils/responseUtils.js'
 
 export const createNewCafe = async (req, res) => {
   try {
@@ -31,6 +34,16 @@ export const createNewCafe = async (req, res) => {
       });
     }
 
+    let validCafeThemeNames = ["Cazy", "Modern", "Rustic", "Vintage", "Industrial", "Minimalist"];
+
+    if (!validCafeThemeNames.includes(themeCategoryName)) {
+      return sendNotFound(
+        res,
+        `Valid theme names are: ${validCafeThemeNames.join(", ")}`
+      );
+    }
+
+
     if (!themeCategoryName?.trim()) {
       return res.status(400).json({
         success: false,
@@ -38,6 +51,17 @@ export const createNewCafe = async (req, res) => {
       });
     }
 
+    // Check for duplicate cafe BEFORE uploading images
+    const existingCafe = await cafeModel.findOne({
+      name: name.trim(),
+      "location.address": address.trim()
+    });
+    if (existingCafe) {
+      return res.status(400).json({
+        success: false,
+        message: "A cafe with this name and address already exists",
+      });
+    }
 
     const parsedAmenities =
       typeof amenities === "string" ? JSON.parse(amenities) : amenities || [];
@@ -214,6 +238,17 @@ export const createNewCafe = async (req, res) => {
 
     await newCafe.save();
 
+    // ✅ Append cafe ID to admin model
+    if (newCafe.createdBy && newCafe._id) {
+      await adminModel.findByIdAndUpdate(
+        newCafe.createdBy,
+        { $addToSet: { cafes: newCafe._id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to update admin cafes:", err.message));
+    }
+
+    await sendNotification({ adminId: newCafe.createdBy, title: `new Cafe Create ${name}`, description: `this new cafe created `, image: newCafe.images[0] || null, type: "broadcast" });
+
     return res.status(201).json({
       success: true,
       message: "Cafe created successfully",
@@ -354,123 +389,132 @@ export const getCafeById = async (req, res) => {
 export const updateCafe = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = { ...req.body };
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid cafe ID"
+        message: "Invalid cafe ID",
       });
     }
 
-    const existingCafe = await cafeModel.findOne({ _id: id });
-
-    console.log(JSON.stringify(existingCafe, null, 2));
+    const existingCafe = await cafeModel.findById(id);
     if (!existingCafe) {
       return res.status(404).json({
         success: false,
-        message: "Cafe not found"
+        message: "Cafe not found",
       });
     }
 
-    // Process theme category image if provided
-    if (req.files && req.files.themeCategoryImage) {
-      const themeImageFile = req.files.themeCategoryImage[0];
-      try {
-        const resizedBuffer = await resizeImage(themeImageFile.buffer, {
-          width: 800,
-          height: 600,
-          quality: 80
-        });
-        const themeCategoryImageUrl = await uploadToS3(
-          resizedBuffer,
-          `cafes/${Date.now()}-${themeImageFile.originalname}`,
-          themeImageFile.mimetype,
-          "cafes"
-        );
+    const updateData = {};
 
-        // Update theme category
-        updateData.themeCategory = {
-          name: updateData.themeCategoryName || existingCafe.themeCategory.name,
-          image: themeCategoryImageUrl
-        };
-      } catch (error) {
-        console.error("Theme category image processing error:", error.message);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to process theme category image",
-          error: error.message
-        });
-      }
+    // ✅ Parse text fields from FormData
+    const {
+      name,
+      description,
+      themeCategoryName,
+      popular,
+      averagePrice,
+      currency,
+      address,
+      city,
+      state,
+      country,
+      lat,
+      lng,
+      status,
+      amenities,
+      services,
+      operatingHours,
+      contact,
+    } = req.body;
+
+    if (name) updateData.name = name;
+    if (description) updateData.description = description;
+    if (status) updateData.status = status;
+    if (popular !== undefined) updateData.popular = popular === "true";
+
+    // ✅ Location
+    updateData.location = {
+      address: address || existingCafe.location?.address || "",
+      city: city || existingCafe.location?.city || "",
+      state: state || existingCafe.location?.state || "",
+      country: country || existingCafe.location?.country || "",
+      coordinates: {
+        lat: parseFloat(lat) || existingCafe.location?.coordinates?.lat || 0,
+        lng: parseFloat(lng) || existingCafe.location?.coordinates?.lng || 0,
+      },
+    };
+
+    // ✅ Pricing
+    updateData.pricing = {
+      averagePrice: Number(averagePrice) || existingCafe.pricing?.averagePrice || 0,
+      currency: currency || existingCafe.pricing?.currency || "USD",
+    };
+
+    // ✅ Handle JSON fields
+    if (amenities) updateData.amenities = JSON.parse(amenities);
+    if (services) updateData.services = JSON.parse(services);
+    if (operatingHours) updateData.operatingHours = JSON.parse(operatingHours);
+    if (contact) updateData.contact = JSON.parse(contact);
+
+    // ✅ Handle themeCategory image upload
+    if (req.files?.themeCategoryImage?.[0]) {
+      const themeFile = req.files.themeCategoryImage[0];
+      const resized = await resizeImage(themeFile.buffer, { width: 800, height: 600, quality: 80 });
+      const themeUrl = await uploadToS3(
+        resized,
+        `cafes/themes/${Date.now()}_${themeFile.originalname}`,
+        themeFile.mimetype,
+        "cafes"
+      );
+      updateData.themeCategory = {
+        name: themeCategoryName || existingCafe.themeCategory?.name || "",
+        image: themeUrl,
+      };
+    } else if (themeCategoryName) {
+      updateData.themeCategory = {
+        name: themeCategoryName,
+        image: existingCafe.themeCategory?.image || "",
+      };
     }
 
-    // Process new cafe images if any
-    if (req.files && req.files.images) {
-      const newImageUrls = [];
+    // ✅ Handle new cafe images
+    if (req.files?.images?.length > 0) {
+      const newImages = [];
       for (const file of req.files.images) {
-        const resizedBuffer = await resizeImage(file.buffer, {
-          width: 1024,
-          height: 768,
-          quality: 80
-        });
+        const resized = await resizeImage(file.buffer, { width: 1024, height: 768, quality: 80 });
         const url = await uploadToS3(
-          resizedBuffer,
-          `cafes/${Date.now()}-${file.originalname}`,
+          resized,
+          `cafes/${Date.now()}_${file.originalname}`,
           file.mimetype,
           "cafes"
         );
-        newImageUrls.push(url);
+        newImages.push(url);
       }
-
-      // Combine existing images with new ones
-      updateData.images = [...existingCafe.images, ...newImageUrls];
+      updateData.images = [...(existingCafe.images || []), ...newImages];
     }
 
-    // Parse JSON fields if they are strings
-    if (updateData.amenities && typeof updateData.amenities === 'string') {
-      updateData.amenities = JSON.parse(updateData.amenities);
-    }
-    if (updateData.services && typeof updateData.services === 'string') {
-      updateData.services = JSON.parse(updateData.services);
-    }
-    if (updateData.operatingHours && typeof updateData.operatingHours === 'string') {
-      updateData.operatingHours = JSON.parse(updateData.operatingHours);
-    }
-    if (updateData.contact && typeof updateData.contact === 'string') {
-      updateData.contact = JSON.parse(updateData.contact);
-    }
-
-    const updatedCafe = await cafeModel.findByIdAndUpdate(
-      id,
-      { $set: updateData },
-      { new: true, runValidators: true }
-    ).select('-__v');
+    // ✅ Update the document
+    const updatedCafe = await cafeModel
+      .findByIdAndUpdate(id, { $set: updateData }, { new: true, runValidators: true })
+      .select("-__v");
 
     return res.status(200).json({
       success: true,
       message: "Cafe updated successfully",
-      data: updatedCafe
+      data: updatedCafe,
     });
-
   } catch (error) {
     console.error("Update Cafe Error:", error.message);
-
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: error.message
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "Server Error",
-      error: error.message
+      message: "Failed to update cafe",
+      error: error.message,
     });
   }
 };
+
+
 
 // Delete cafe
 export const deleteCafe = async (req, res) => {
@@ -490,6 +534,15 @@ export const deleteCafe = async (req, res) => {
         success: false,
         message: "Cafe not found",
       });
+    }
+
+    // ✅ Remove cafe ID from admin model before deleting
+    if (cafe.createdBy) {
+      await adminModel.findByIdAndUpdate(
+        cafe.createdBy,
+        { $pull: { cafes: id } },
+        { new: true }
+      ).catch(err => log.warn("Failed to remove cafe from admin:", err.message));
     }
 
     const imagesToDelete = [];
@@ -529,21 +582,40 @@ export const deleteCafe = async (req, res) => {
 // Get cafes by location
 export const getCafesByLocation = async (req, res) => {
   try {
-    const { city, country } = req.query;
+    const { city, state, country, theme, status, minPrice, maxPrice, popular } = req.query;
 
-    if (!city || !country) {
+    // Build dynamic filter
+    const filter = {};
+
+    if (city) filter["location.city"] = { $regex: new RegExp(city, "i") };
+    if (state) filter["location.state"] = { $regex: new RegExp(state, "i") };
+    if (country) filter["location.country"] = { $regex: new RegExp(country, "i") };
+
+    if (theme) filter["themeCategory.name"] = { $regex: new RegExp(theme, "i") };
+    if (status) filter.status = status;
+    if (popular !== undefined) filter.popular = popular === "true";
+
+    if (minPrice || maxPrice) {
+      filter["pricing.averagePrice"] = {};
+      if (minPrice) filter["pricing.averagePrice"].$gte = Number(minPrice);
+      if (maxPrice) filter["pricing.averagePrice"].$lte = Number(maxPrice);
+    }
+
+    if (Object.keys(filter).length === 0) {
       return res.status(400).json({
         success: false,
-        message: "City and country are required"
+        message: "Please provide at least one search filter (city, state, country, theme, etc.)"
       });
     }
 
-    const cafes = await cafeModel.findByLocation(city, country);
+
+    const cafes = await cafeModel.find(filter).select("-__v");
 
     return res.status(200).json({
       success: true,
+      count: cafes.length,
+      filters: filter,
       data: cafes,
-      count: cafes.length
     });
 
   } catch (error) {
@@ -551,10 +623,11 @@ export const getCafesByLocation = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server Error",
-      error: error.message
+      error: error.message,
     });
   }
 };
+
 
 // Get popular cafes
 export const getPopularCafes = async (req, res) => {
@@ -587,36 +660,53 @@ export const searchCafes = async (req, res) => {
     if (!q) {
       return res.status(400).json({
         success: false,
-        message: "Search query is required"
+        message: "Search query (q) is required"
       });
     }
 
-    const cafes = await cafeModel
-      .find(
-        {
-          $text: { $search: q },
-          status: 'active'
-        },
-        { score: { $meta: "textScore" } }
-      )
-      .sort({ score: { $meta: "textScore" } })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .select('-__v');
+    // Convert page & limit to numbers
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
 
-    const total = await cafeModel.countDocuments({
-      $text: { $search: q },
-      status: 'active'
-    });
+    // 🔍 Smart flexible search filter
+    const searchRegex = new RegExp(q, "i"); // Case-insensitive
+
+    const filter = {
+      status: "active",
+      $or: [
+        { name: searchRegex },
+        { description: searchRegex },
+        { "location.address": searchRegex },
+        { "location.city": searchRegex },
+        { "location.state": searchRegex },
+        { "location.country": searchRegex },
+        { "themeCategory.name": searchRegex },
+        { amenities: { $in: [searchRegex] } },
+        { services: { $in: [searchRegex] } }
+      ]
+    };
+
+    // 🔹 Fetch results with pagination
+    const cafes = await cafeModel
+      .find(filter)
+      .select("-__v")
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
+
+    // 🔹 Count total matching documents
+    const total = await cafeModel.countDocuments(filter);
 
     return res.status(200).json({
       success: true,
-      data: cafes,
+      message: "Search results fetched successfully",
+      query: q,
+      count: cafes.length,
       pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / limit),
-        totalCafes: total
-      }
+        current: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+        totalResults: total,
+      },
+      data: cafes,
     });
 
   } catch (error) {
@@ -628,6 +718,7 @@ export const searchCafes = async (req, res) => {
     });
   }
 };
+
 
 export const cafeThemes = async (req, res) => {
   try {

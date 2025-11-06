@@ -259,12 +259,18 @@ export const userLogin = async (req, res) => {
       return sendBadRequest(res, "Email and password are required");
     }
 
-    const user = await userModel.findOne({ email });
+    const user = await userModel.findOne({ email }).select("+password");
     if (!user) {
       return sendBadRequest(res, "User not found, please register");
     }
+    console.log({
+      inputPassword: password,
+      storedPassword: user.password,
+      type: typeof password
+    });
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(String(password), user.password);
+
     if (!isMatch) {
       return sendBadRequest(res, "Incorrect password");
     }
@@ -294,6 +300,7 @@ export const userLogin = async (req, res) => {
       email: user.email,
       role: user.role
     };
+
     const token = jwt.sign(payload, process.env.JWT_SECET, { expiresIn: "30d" });
 
     log.success(`${user.name} Login Successful`);

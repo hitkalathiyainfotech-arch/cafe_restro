@@ -68,7 +68,7 @@ const CafeSchema = new mongoose.Schema({
     },
     name: {
       type: String,
-      enum: ["Cozy", "Modern", "Rustic", "Vintage", "Industrial", "Minimalist"],
+      enum: ["Cazy", "Modern", "Rustic", "Vintage", "Industrial", "Minimalist"],
       default: null,
       required: true
     }
@@ -131,7 +131,7 @@ const CafeSchema = new mongoose.Schema({
       default: 'USD',
       uppercase: true,
       enum: {
-        values: ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'],
+        values: ['USD','INR', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'],
         message: '{VALUE} is not a supported currency'
       }
     }
