@@ -28,7 +28,7 @@ import { downloadBookingInvoice } from '../controller/invoice.controller.js';
 import { getTrendingDestinations, WhatsNew } from '../controller/home.controller.js';
 import { createNotification, deleteNotification, getAllNotifications, getMyNotifications, getNotificationById, updateNotification } from '../controller/notification.controller.js';
 import { createStay, deleteStay, getAllStays, getStayById, updateStay } from '../controller/stay.controller.js';
-// import { addReview, getMyAllReviews } from '../controller/review.controller.js';
+
 
 
 const indexRouter = express.Router();
@@ -222,6 +222,8 @@ indexRouter.delete("/deleteTour/:id", deleteTour);
 indexRouter.get("/allBookings", UserAuth, getMyAllBookings)
 indexRouter.get("/downloadInvoice/:id", UserAuth, downloadBookingInvoice);
 indexRouter.get("/getMyRefundedBooking", UserAuth, getMyRefundBooking)
+
+indexRouter.get("/business/:businessId", getBusinessReviews);
 
 // review
 indexRouter.post("/addReview/:businessId", UserAuth, addReview);

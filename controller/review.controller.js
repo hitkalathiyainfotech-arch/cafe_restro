@@ -90,9 +90,9 @@ export const addReview = async (req, res) => {
   try {
     const { _id: userId } = req.user;
     const { businessId } = req.params;
-    const { rating, comment } = req.body;
+    const { rating, comment, businessType: requestedType } = req.body; // client can send expected type (e.g. "hotel", "cafe")
 
-    // Input validation
+    // Basic validations
     if (!mongoose.Types.ObjectId.isValid(businessId)) {
       return sendError(res, "Invalid business ID.");
     }
@@ -105,28 +105,39 @@ export const addReview = async (req, res) => {
       return sendError(res, "Rating must be between 1 and 5.");
     }
 
-    // Find business dynamically
-    let business = null;
-    let businessType = null;
-
-    for (const [key, config] of Object.entries(BUSINESS_TYPES)) {
-      const found = await config.model.findById(businessId);
-      if (found) {
-        business = found;
-        businessType = config.type;
-        break;
-      }
+    if (!requestedType) {
+      return sendError(res, "Business type is required.");
     }
 
-    if (!business) {
+    const validType = BUSINESS_TYPES[requestedType];
+    if (!validType) {
+      return sendError(res, "Invalid business type provided.");
+    }
+
+    // Find business dynamically (and validate type)
+    const foundBusiness = await validType.model.findById(businessId);
+
+    if (!foundBusiness) {
+      // Business not found in given type — check if exists in another type to catch mismatch
+      for (const [key, config] of Object.entries(BUSINESS_TYPES)) {
+        if (key !== requestedType) {
+          const existsElsewhere = await config.model.findById(businessId);
+          if (existsElsewhere) {
+            return sendError(
+              res,
+              `Provided ID belongs to a different business type (${config.type}), not ${requestedType}.`
+            );
+          }
+        }
+      }
       return sendError(res, "No matching business found for given ID.");
     }
 
-    // Check if user already reviewed (prevent duplicate)
+    // Check duplicate review
     const existingReview = await reviewModel.findOne({
       userId,
       businessId,
-      businessType,
+      businessType: requestedType,
       isActive: true
     });
 
@@ -134,17 +145,23 @@ export const addReview = async (req, res) => {
       return sendError(res, "You have already reviewed this business.");
     }
 
-    // Create new review document
+    // Create review
     const review = await reviewModel.create({
       userId,
       businessId,
-      businessType,
+      businessType: requestedType,
       rating,
       comment,
     });
 
-    // Add review to business and update average rating
-    const updatedBusiness = await updateBusinessReviews(businessType, businessId, userId, rating, comment);
+    // Update business review stats
+    const updatedBusiness = await updateBusinessReviews(
+      requestedType,
+      businessId,
+      userId,
+      rating,
+      comment
+    );
 
     return sendSuccess(res, "Review added successfully", {
       review,
@@ -154,7 +171,6 @@ export const addReview = async (req, res) => {
   } catch (error) {
     console.error("Error while adding review:", error);
 
-    // Handle duplicate key error (unique index violation)
     if (error.code === 11000) {
       return sendError(res, "You have already reviewed this business.");
     }
@@ -162,6 +178,7 @@ export const addReview = async (req, res) => {
     return sendError(res, "Error while adding review");
   }
 };
+
 
 // Get reviews for a business
 export const getBusinessReviews = async (req, res) => {
