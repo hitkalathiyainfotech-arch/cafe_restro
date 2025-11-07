@@ -16,14 +16,13 @@ export const createStay = async (req, res) => {
       return sendError(res, 400, "All required fields must be provided");
     }
 
-    // Check for duplicate stay BEFORE uploading images
     const existingStay = await stayModel.findOne({
       name: name.trim(),
       address: address.trim(),
       city: city.trim()
     });
     if (existingStay) {
-      return sendError(res, 400, "A stay with this name, address, and city already exists");
+      return sendError(res, "A stay with this name, address, and city already exists");
     }
 
     let imageUrls = [];
@@ -50,7 +49,6 @@ export const createStay = async (req, res) => {
       adminId,
     });
 
-    // ✅ Append stay ID to admin model
     if (newStay.adminId && newStay._id) {
       await adminModel.findByIdAndUpdate(
         newStay.adminId,
@@ -59,10 +57,10 @@ export const createStay = async (req, res) => {
       ).catch(err => log.warn("Failed to update admin stays:", err.message));
     }
 
-    return sendSuccess(res, 201, "Stay created successfully", newStay);
+    return sendSuccess(res, "Stay created successfully", newStay);
   } catch (error) {
     log.error(`Errror on Create : ${error.message}`)
-    return sendError(res, 500, "Failed to create stay", error);
+    return sendError(res, "Failed to create stay", error);
   }
 };
 
@@ -70,11 +68,11 @@ export const createStay = async (req, res) => {
 export const updateStay = async (req, res) => {
   try {
     const { id } = req.params;
-    const { _id: adminId } = req.admin;
+    // const { _id: adminId } = req.admin;
 
     const stay = await stayModel.findOne({
       _id: id,
-      adminId: new mongoose.Types.ObjectId(adminId),
+      // adminId: adminId
     });
 
     if (!stay) {
@@ -85,7 +83,6 @@ export const updateStay = async (req, res) => {
 
     const stayImage = req.files?.["stayImage"]?.[0];
     if (stayImage) {
-      // Delete old image from S3 (if exists)
       if (stay.images && stay.images.length > 0) {
         const oldImageUrl = stay.images[0];
         const key = oldImageUrl.split(".amazonaws.com/")[1];
@@ -114,46 +111,53 @@ export const updateStay = async (req, res) => {
 };
 
 
-
 export const deleteStay = async (req, res) => {
   try {
     const { id } = req.params;
     const { _id: adminId } = req.admin;
 
-    const stay = await stayModel.findOne({
-      _id: id,
-      adminId: new mongoose.Types.ObjectId(adminId),
-    });
+    console.log("Param id:", id);
+    console.log("Admin _id:", adminId);
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return sendError(res, 400, "Invalid stay ID");
+    }
+
+    const stay = await stayModel.findOne({ _id: id });
     if (!stay) {
-      return sendNotFound(res, "Stay not found or not authorized");
+      return sendNotFound(res, "Stay not found");
     }
 
-    // ✅ Remove stay ID from admin model before deleting
-    if (stay.adminId) {
-      await adminModel.findByIdAndUpdate(
-        stay.adminId,
-        { $pull: { stays: id } },
-        { new: true }
-      ).catch(err => log.warn("Failed to remove stay from admin:", err.message));
-    }
 
-    // Delete image(s) from S3 if present
-    if (stay.images && stay.images.length > 0) {
+    await adminModel.findByIdAndUpdate(
+      stay.adminId,
+      { $pull: { stays: id } },
+      { new: true }
+    ).catch((err) =>
+      console.warn("Failed to remove stay from admin:", err.message)
+    );
+
+
+    if (Array.isArray(stay.images) && stay.images.length > 0) {
       for (const imageUrl of stay.images) {
-        const key = imageUrl.split(".amazonaws.com/")[1];
-        if (key) {
-          await deleteFromS3(key);
+        try {
+          const key = imageUrl.split(".amazonaws.com/")[1];
+          if (key) await deleteFromS3(key);
+        } catch (err) {
+          console.warn(`Failed to delete image ${imageUrl}:`, err.message);
         }
       }
     }
 
     await stayModel.findByIdAndDelete(id);
-    return sendSuccess(res, 200, "Stay deleted successfully");
+
+    return sendSuccess(res, "Stay deleted successfully");
   } catch (err) {
-    return sendError(res, 500, "Failed to delete stay", err.message);
+    console.error("Delete stay error:", err);
+    return sendError(res, "Failed to delete stay", err.message);
   }
 };
+
 
 // export const getAdminStays = async (req, res) => {
 //   try {

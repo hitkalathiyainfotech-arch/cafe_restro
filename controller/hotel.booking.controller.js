@@ -1,7 +1,7 @@
 import log from "../utils/logger.js";
 import hotelBookingModel from "../model/hotel.booking.model.js";
 import hotelModel from "../model/hotel.model.js";
-import { sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
+import { sendBadRequest, sendError, sendNotFound, sendSuccess } from "../utils/responseUtils.js";
 import coupanModel from "../model/coupan.model.js";
 import { sendNotification } from "../utils/notificatoin.utils.js";
 import userModel from "../model/user.model.js";
@@ -160,16 +160,22 @@ export const createBooking = async (req, res) => {
 export const previewHotelBooking = async (req, res) => {
   try {
     const { hotelId } = req.params;
-    const { roomId, checkInDate, checkOutDate, numberOfRooms = 1, adults = 1 } = req.body;
+    const {
+      roomId,
+      checkInDate,
+      checkOutDate,
+      couponCode,
+      numberOfRooms = 1,
+      adults = 1,
+    } = req.body;
 
     if (!hotelId || !roomId || !checkInDate || !checkOutDate) {
       return res.status(400).json({ success: false, message: "Missing required booking details" });
     }
 
-    // Parse safe dates (handle DD-MM-YYYY or YYYY-MM-DD)
     const parseDate = (dateStr) => {
-      const [d, m, y] = dateStr.includes("-") ? dateStr.split("-") : [];
-      return new Date(`${y}-${m}-${d}`); // Convert to YYYY-MM-DD
+      const [d, m, y] = dateStr.split("-");
+      return new Date(`${y}-${m}-${d}`);
     };
 
     const startDate = parseDate(checkInDate);
@@ -183,26 +189,47 @@ export const previewHotelBooking = async (req, res) => {
       return res.status(400).json({ success: false, message: "Check-out date must be after check-in date" });
     }
 
-    // Fetch hotel and room
     const hotel = await hotelModel.findById(hotelId);
     if (!hotel) return res.status(404).json({ success: false, message: "Hotel not found" });
 
     const room = hotel.rooms.id(roomId);
     if (!room) return res.status(404).json({ success: false, message: "Room not found" });
 
-    // Calculate stay duration
     const numberOfNights = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
 
-    // Pricing logic
     const TAX_PERCENT = 12;
     const SERVICE_FEE = 100;
     const PLATFORM_FEE = 50;
-    const DISCOUNT_PERCENT = 0;
 
     const roomRatePerNight = room.pricePerNight;
     const totalRoomRate = roomRatePerNight * numberOfNights * numberOfRooms;
-    const discountAmount = (totalRoomRate * DISCOUNT_PERCENT) / 100;
-    const subtotal = totalRoomRate - discountAmount;
+
+    let discountPercent = 0;
+    let discountAmount = 0;
+    let couponDetails = null;
+
+    if (couponCode) {
+      const coupon = await coupanModel.findOne({
+        couponCode,
+        isActive: true,
+      });
+
+      if (coupon) {
+        discountPercent = coupon.couponPerc || 0;
+        discountAmount = (totalRoomRate * discountPercent) / 100;
+        couponDetails = {
+          code: coupon.couponCode,
+          discountPercent,
+          description: coupon.description || "",
+        };
+        console.log(discountAmount)
+        console.log(discountPercent)
+      } else {
+        couponDetails = { code: couponCode, message: "Invalid or inactive coupon" };
+      }
+    }
+
+    let subtotal = totalRoomRate - discountAmount;
     const taxAmount = (subtotal * TAX_PERCENT) / 100;
     const totalAmount = subtotal + taxAmount + SERVICE_FEE + PLATFORM_FEE;
 
@@ -231,8 +258,8 @@ export const previewHotelBooking = async (req, res) => {
         },
         costBreakdown: {
           totalRoomRate,
-          discountPercent: DISCOUNT_PERCENT,
-          discountAmount,
+          discountPercent: discountPercent,
+          discountAmount: discountAmount,
           subtotal,
           taxPercent: TAX_PERCENT,
           taxAmount,
@@ -241,6 +268,7 @@ export const previewHotelBooking = async (req, res) => {
           totalAmount: Number(totalAmount.toFixed(2)),
           currency: "INR",
         },
+        coupon: couponDetails,
       },
     });
   } catch (error) {

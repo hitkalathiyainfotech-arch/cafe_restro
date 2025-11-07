@@ -213,61 +213,35 @@ export const getUserBookings = async (req, res) => {
 export const getCafeBookings = async (req, res) => {
   try {
     const { cafeId } = req.params;
-    const { page = 1, limit = 10, status, date } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(cafeId)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid cafe ID"
+        message: "Invalid cafe ID",
       });
     }
 
-    // Check if cafe exists
-    const cafe = await cafeModel.findById(cafeId);
-    if (!cafe) {
-      return res.status(404).json({
-        success: false,
-        message: "Cafe not found"
-      });
-    }
-
-    // Build filter
-    const filter = { cafeId };
-    if (status && ["pending", "confirmed", "cancelled", "completed"].includes(status)) {
-      filter.bookingStatus = status;
-    }
-    if (date) {
-      filter.bookingDate = new Date(date);
-    }
-
+    // Fetch all bookings for this cafe
     const bookings = await cafeBookingModel
-      .find(filter)
-      .populate('userId', 'name email phone')
-      .sort({ bookingDate: 1, timeSlot: 1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await cafeBookingModel.countDocuments(filter);
+      .find({ cafeId })
+      .populate("userId", "name email phone")
+      .sort({ bookingDate: 1, timeSlot: 1 });
 
     return res.status(200).json({
       success: true,
+      message: `${bookings.length} bookings found`,
       data: bookings,
-      pagination: {
-        current: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalBookings: total
-      }
     });
-
   } catch (error) {
     console.error("Get Cafe Bookings Error:", error);
     return res.status(500).json({
       success: false,
       message: "Server Error",
-      error: error.message
+      error: error.message,
     });
   }
 };
+
 
 // Get booking by ID
 export const getBookingById = async (req, res) => {
@@ -313,11 +287,12 @@ export const previewCafeBooking = async (req, res) => {
     const { cafeId } = req.params;
     const {
       bookingDate,
-      startTime,  
-      endTime,       
+      startTime,
+      endTime,
       numberOfTables = 1,
       numberOfGuests = 1,
-      specialRequests = ""
+      specialRequests = "",
+      couponCode
     } = req.body;
 
     if (!bookingDate || !startTime || !endTime) {
@@ -359,7 +334,6 @@ export const previewCafeBooking = async (req, res) => {
       });
     }
 
-
     const [startHour, startMin] = startTime.split(":").map(Number);
     const [endHour, endMin] = endTime.split(":").map(Number);
 
@@ -371,31 +345,61 @@ export const previewCafeBooking = async (req, res) => {
       });
     }
 
-
     const baseRatePerHour = cafe.pricing?.averagePrice || 100; // fallback ₹100/hr
     const currency = cafe.pricing?.currency || "INR";
     const baseSubtotal = baseRatePerHour * durationHours * numberOfTables;
 
-
+    // 🎯 Automatic discounts based on duration & tables
     let discountPercentage = 0;
+    if (durationHours >= 3) discountPercentage += 10;
+    if (numberOfTables > 2) discountPercentage += 5;
 
-    if (durationHours >= 3) discountPercentage += 10; 
-    if (numberOfTables > 2) discountPercentage += 5; 
-
-    const dayOfWeek = bookingDateObj.getDay(); 
+    const dayOfWeek = bookingDateObj.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-
     const weekendMultiplier = isWeekend ? 1.1 : 1;
-
     const isEvening = endHour >= 18;
     const peakHourMultiplier = isEvening ? 1.15 : 1;
 
     const subtotalBeforeDiscount = baseSubtotal * weekendMultiplier * peakHourMultiplier;
 
+    // 💸 Apply system discount first
     const discountAmount = (subtotalBeforeDiscount * discountPercentage) / 100;
-    const discountedSubtotal = subtotalBeforeDiscount - discountAmount;
+    let discountedSubtotal = subtotalBeforeDiscount - discountAmount;
 
+    // 🎟️ Coupon Logic
+    let couponDetails = null;
+    let couponDiscountAmount = 0;
+
+    if (couponCode) {
+      const coupon = await coupanModel.findOne({ couponCode, isActive: true });
+      if (coupon) {
+        if (coupon.type === "PERCENT") {
+          couponDiscountAmount = (discountedSubtotal * coupon.couponPerc) / 100;
+        } else if (coupon.type === "FLAT") {
+          couponDiscountAmount = coupon.flatAmount || 0;
+        }
+
+        discountedSubtotal -= couponDiscountAmount;
+        if (discountedSubtotal < 0) discountedSubtotal = 0;
+
+        couponDetails = {
+          code: coupon.couponCode,
+          type: coupon.type,
+          description: coupon.description || "",
+          discountPercent: coupon.couponPerc || null,
+          flatAmount: coupon.flatAmount || null,
+          discountApplied: couponDiscountAmount.toFixed(2)
+        };
+      } else {
+        couponDetails = {
+          code: couponCode,
+          message: "Invalid or inactive coupon"
+        };
+      }
+    }
+
+    // 💰 Charges & Total Calculation
     const serviceChargePercentage = 5;
     const taxPercentage = 12;
     const reservationFee = 50;
@@ -404,7 +408,7 @@ export const previewCafeBooking = async (req, res) => {
     const taxAmount = (discountedSubtotal * taxPercentage) / 100;
     const totalAmount = discountedSubtotal + serviceCharge + taxAmount + reservationFee;
 
-
+    // ✅ Response
     return res.status(200).json({
       success: true,
       data: {
@@ -426,6 +430,7 @@ export const previewCafeBooking = async (req, res) => {
           isWeekend,
           isPeakHour: isEvening
         },
+        coupon: couponDetails,
         paymentSummary: {
           title: "Payment Information",
           items: [
@@ -445,10 +450,17 @@ export const previewCafeBooking = async (req, res) => {
               type: "discount"
             },
             {
-              label: "With Discount",
-              value: discountedSubtotal.toFixed(2),
+              label: "Subtotal After Discount",
+              value: (subtotalBeforeDiscount - discountAmount).toFixed(2),
               prefix: "₹"
             },
+            ...(couponDiscountAmount > 0
+              ? [{
+                  label: `Coupon (${couponCode})`,
+                  value: `-₹${couponDiscountAmount.toFixed(2)}`,
+                  type: "coupon"
+                }]
+              : []),
             {
               label: "Service Charge (5%)",
               value: serviceCharge.toFixed(2),
@@ -488,13 +500,14 @@ export const previewCafeBooking = async (req, res) => {
   }
 };
 
+
 // Update booking status
 export const updateBookingStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { bookingStatus } = req.body;
-    const adminId = req.admin?._id; // From AdminAuth middleware
-    // Validate input
+    const adminId = req.admin?._id; 
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -502,15 +515,16 @@ export const updateBookingStatus = async (req, res) => {
       });
     }
 
-    if (!bookingStatus || !["pending", "confirmed", "cancelled", "completed"].includes(bookingStatus)) {
+    let validStatuses =  ["Upcoming", "Completed", "Cancelled", "Refunded"];
+
+    if (!bookingStatus || !validStatuses.includes(bookingStatus)) {
       return res.status(400).json({
         success: false,
         message: "Valid booking status is required"
       });
     }
 
-    // Find booking
-    const booking = await cafeBookingModel.findById(id);
+    const booking = await cafeBookingModel.findOne({ _id: id, adminId: adminId });
     if (!booking) {
       return res.status(404).json({
         success: false,
@@ -518,14 +532,10 @@ export const updateBookingStatus = async (req, res) => {
       });
     }
 
-    // Since we're using AdminAuth middleware, any authenticated admin can update
-    // No need to check adminId against booking.adminId unless you want to restrict
 
-    // Update booking
     const previousStatus = booking.bookingStatus;
     booking.bookingStatus = bookingStatus;
 
-    // Handle payment status updates
     if (bookingStatus === 'cancelled') {
       booking.payment.paymentStatus = 'cancelled';
     } else if (bookingStatus === 'confirmed' && previousStatus === 'pending') {
@@ -535,7 +545,6 @@ export const updateBookingStatus = async (req, res) => {
 
     await booking.save();
 
-    // Populate for response
     await booking.populate('cafeId', 'name location images themeCategory');
     await booking.populate('userId', 'name email phone');
 
@@ -574,7 +583,8 @@ export const updatePaymentStatus = async (req, res) => {
       });
     }
 
-    if (!paymentStatus || !["pending", "confirmed", "failed", "cancelled"].includes(paymentStatus)) {
+    let validStatuses = ["pending", "confirmed", "cancelled", "completed", "refunded", "failed"];
+    if (!paymentStatus || !validStatuses.includes(paymentStatus)) {
       return res.status(400).json({
         success: false,
         message: "Valid payment status is required"
@@ -625,66 +635,81 @@ export const cancelBooking = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking ID"
+        message: "Invalid booking ID",
       });
     }
-    let validStatuses  = ["Upcoming", "Completed", "Cancelled", "Refunded"];
-    
-    
 
     const booking = await cafeBookingModel.findById(id);
     if (!booking) {
       return res.status(404).json({
         success: false,
-        message: "Booking not found"
+        message: "Booking not found",
       });
     }
 
-    // Check if user is authorized to cancel this booking
-    const userId = req.user?._id;
-    const isAdmin = req.user?.role === 'admin';
+    // Validate booking status
+    const validStatuses = ["Upcoming", "Completed", "Cancelled", "Refunded"];
+    if (!validStatuses.includes(booking.bookingStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking status",
+      });
+    }
 
+    // Check if user is authorized
+    const userId = req.user?._id;
+    const isAdmin = req.user?.role === "admin";
     if (!isAdmin && booking.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to cancel this booking"
+        message: "You are not authorized to cancel this booking",
       });
     }
 
     // Check if booking can be cancelled
-    if (booking.bookingStatus === 'Completed') {
+    if (booking.bookingStatus === "Cancelled") {
       return res.status(400).json({
         success: false,
-        message: "Booking is already cancelled"
+        message: "Booking is already cancelled",
       });
     }
 
-    if (booking.bookingStatus === 'completed') {
+    if (booking.bookingStatus === "Completed") {
       return res.status(400).json({
         success: false,
-        message: "Completed bookings cannot be cancelled"
+        message: "Completed bookings cannot be cancelled",
       });
     }
+    let vaildPaymentStatus = ["pending", "confirmed", "cancelled", "completed", "refunded", "failed"];
+    if (!vaildPaymentStatus.includes(booking.payment.paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment status"
+      });
+    }
+    // Update booking
+    booking.bookingStatus = "Cancelled";
+    if (booking.payment) {
+      booking.payment.paymentStatus = "cancelled";
+    }
 
-    booking.bookingStatus = 'cancelled';
-    booking.payment.paymentStatus = 'cancelled';
     await booking.save();
 
     return res.status(200).json({
       success: true,
       message: "Booking cancelled successfully",
-      data: booking
+      data: booking,
     });
-
   } catch (error) {
     console.error("Cancel Booking Error:", error);
     return res.status(500).json({
       success: false,
       message: "Server Error",
-      error: error.message
+      error: error.message,
     });
   }
 };
+
 
 // Get available time slots for a cafe
 export const getAvailableTimeSlots = async (req, res) => {

@@ -6,6 +6,205 @@ import restroModel from "../model/restro.model.js";
 import coupanModel from "../model/coupan.model.js";
 import { sendNotification } from "../utils/notificatoin.utils.js";
 
+
+
+export const previewRestroBooking = async (req, res) => {
+  try {
+    const { restaurantId } = req.params;
+    const {
+      bookingDate,
+      startTime,
+      endTime,
+      numberOfGuests = 2,
+      tableCount = 1,
+      specialRequests = "",
+      coupanCode
+    } = req.body;
+
+    if (!bookingDate || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Booking date, startTime, and endTime are required."
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid restaurant ID."
+      });
+    }
+
+    const bookingDateObj = new Date(bookingDate);
+    if (isNaN(bookingDateObj.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking date format."
+      });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (bookingDateObj < today) {
+      return res.status(400).json({
+        success: false,
+        message: "Booking date cannot be in the past."
+      });
+    }
+
+    const restaurant = await restroModel.findById(restaurantId);
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found."
+      });
+    }
+
+    const [startHour, startMin] = startTime.split(":").map(Number);
+    const [endHour, endMin] = endTime.split(":").map(Number);
+    const durationHours = (endHour + endMin / 60) - (startHour + startMin / 60);
+
+    if (durationHours <= 0 || durationHours > 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid time range. Duration must be between 1 and 8 hours."
+      });
+    }
+
+    const baseRate = restaurant.averageCostForTwo / 2; // avg per person
+    const baseSubtotal = baseRate * numberOfGuests * tableCount;
+    const currency = restaurant.currency || "INR";
+
+    const dayOfWeek = bookingDateObj.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const weekendMultiplier = isWeekend ? 1.1 : 1;
+    const isEvening = endHour >= 18;
+    const peakHourMultiplier = isEvening ? 1.15 : 1;
+
+    let subtotal = baseSubtotal * weekendMultiplier * peakHourMultiplier;
+
+    let couponDiscount = 0;
+    let couponPerc = 0;
+    let couponDetails = null;
+
+    if (coupanCode) {
+      const validCoupon = await coupanModel.validateCoupon(coupanCode);
+      if (validCoupon) {
+        couponPerc = validCoupon.couponPerc;
+        couponDiscount = (subtotal * couponPerc) / 100;
+        subtotal -= couponDiscount;
+        couponDetails = {
+          code: validCoupon.couponCode,
+          discountApplied: couponPerc + "%",
+          discountAmount: couponDiscount.toFixed(2),
+        };
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired coupon code."
+        });
+      }
+    }
+
+    const serviceChargePercentage = 5;
+    const taxPercentage = 12;
+    const reservationFee = 50;
+
+    const serviceCharge = (subtotal * serviceChargePercentage) / 100;
+    const taxAmount = (subtotal * taxPercentage) / 100;
+    const totalAmount = subtotal + serviceCharge + taxAmount + reservationFee;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        restaurantDetails: {
+          _id: restaurant._id,
+          name: restaurant.name,
+          cuisines: restaurant.cuisineTypes,
+          address: restaurant.address.street + ", " + restaurant.address.city,
+          image: restaurant.images?.featured || restaurant.images?.gallery?.[0] || null
+        },
+        bookingDetails: {
+          bookingDate,
+          startTime,
+          endTime,
+          durationHours,
+          numberOfGuests,
+          tableCount,
+          specialRequests,
+          isWeekend,
+          isPeakHour: isEvening
+        },
+        paymentSummary: {
+          title: "Payment Information",
+          items: [
+            {
+              label: `${tableCount} Table × ${numberOfGuests} Guests × ${durationHours} Hours`,
+              value: baseSubtotal.toFixed(2),
+              prefix: "₹"
+            },
+            {
+              label: "Weekend / Peak Adjustment",
+              value: ((weekendMultiplier * peakHourMultiplier - 1) * 100).toFixed(1) + "%",
+              type: "surcharge"
+            },
+            couponDetails
+              ? {
+                  label: `Coupon (${couponDetails.code})`,
+                  value: `-${couponDetails.discountAmount}`,
+                  type: "discount",
+                  prefix: "₹"
+                }
+              : {
+                  label: "Coupon Discount",
+                  value: "0%",
+                  type: "discount"
+                },
+            {
+              label: "Service Charge (5%)",
+              value: serviceCharge.toFixed(2),
+              prefix: "₹"
+            },
+            {
+              label: "Tax (12%)",
+              value: taxAmount.toFixed(2),
+              prefix: "₹"
+            },
+            {
+              label: "Reservation Fee",
+              value: reservationFee.toFixed(2),
+              prefix: "₹"
+            },
+            {
+              label: "Total Payable",
+              value: totalAmount.toFixed(2),
+              prefix: "₹",
+              bold: true
+            }
+          ],
+          totalAmount: totalAmount.toFixed(2),
+          currency,
+          coupon: couponDetails || null,
+          proceedAction: "Proceed To Pay"
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Preview Restaurant Booking Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message
+    });
+  }
+};
+
+
+
+
+
+
 const calculateAutomaticBilling = async (restaurant, couponCode, numberOfGuests, duration = 60) => {
   try {
 
@@ -372,18 +571,22 @@ export const getUserRestaurantBookings = async (req, res) => {
 
 export const getRestaurantBookings = async (req, res) => {
   try {
-    const { restaurantId } = req.params;
+    const { restroId } = req.params;
     const { date, status, page = 1, limit = 10 } = req.query;
 
-    if (!restaurantId) {
+    if (!restroId) {
       return sendError(res, "Restaurant ID is required");
     }
 
-    const query = { restaurantId };
+    // Build query
+    const query = { restaurantId: restroId };
+
+    // Filter by booking status
     if (status && status !== "all") {
       query.bookingStatus = status;
     }
 
+    // Filter by booking date (day range)
     if (date) {
       const targetDate = new Date(date);
       const startDate = new Date(targetDate.setHours(0, 0, 0, 0));
@@ -391,30 +594,32 @@ export const getRestaurantBookings = async (req, res) => {
       query.bookingDate = { $gte: startDate, $lte: endDate };
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
+    // Fetch bookings
     const bookings = await restaurantBookingModel
       .find(query)
       .populate("userId", "name email phone")
       .populate("adminId", "name email")
       .sort({ bookingDate: 1, "timeSlot.startTime": 1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(limitNum);
 
     const totalBookings = await restaurantBookingModel.countDocuments(query);
-    const totalPages = Math.ceil(totalBookings / parseInt(limit));
+    const totalPages = Math.ceil(totalBookings / limitNum);
 
     return sendSuccess(res, "Restaurant bookings fetched successfully", {
       bookings,
       pagination: {
-        currentPage: parseInt(page),
+        currentPage: pageNum,
         totalPages,
         totalItems: totalBookings,
-        hasNext: parseInt(page) < totalPages,
-        hasPrev: parseInt(page) > 1
-      }
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
+      },
     });
-
   } catch (error) {
     console.error("Get restaurant bookings error:", error);
     return sendError(res, "Failed to fetch restaurant bookings", error.message);

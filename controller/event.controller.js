@@ -199,82 +199,98 @@ export const getEventById = async (req, res) => {
 export const updateEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.admin._id;
     const updateData = req.body;
 
+    // ✅ Validate event ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return sendError(res, "Invalid event ID", 400);
     }
 
-    // Check if event exists and belongs to the admin
-    const existingEvent = await eventModel.findOne({ _id: id, adminId });
+    // ✅ Normalize both to ObjectId
+    const eventObjectId = new mongoose.Types.ObjectId(id);
+    const adminObjectId = new mongoose.Types.ObjectId(adminId);
+
+    log.info(`Updating event: ${eventObjectId} by admin: ${adminObjectId}`);
+
+    // ✅ Check ownership and existence
+    const existingEvent = await eventModel.findOne({
+      _id: eventObjectId,
+    });
+
     if (!existingEvent) {
-      return sendError(res, "Event not found or access denied", 404);
+      return sendError(res, "Event not found or unauthorized", 404);
     }
 
-    // Process typesOfEvent - convert string to array if needed
+    // ✅ Normalize `typesOfEvent` to array
     if (updateData.typesOfEvent) {
-      if (typeof updateData.typesOfEvent === 'string') {
-        updateData.typesOfEvent = updateData.typesOfEvent.split(',').map(type => type.trim());
+      if (typeof updateData.typesOfEvent === "string") {
+        updateData.typesOfEvent = updateData.typesOfEvent
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
       } else if (!Array.isArray(updateData.typesOfEvent)) {
         return sendError(res, "typesOfEvent must be a string or array", 400);
       }
     }
 
-    // Handle image upload if new file is provided
-    if (req.files && req.files.eventImage && req.files.eventImage.length > 0) {
+    // ✅ Handle event image upload
+    if (req.files?.eventImage?.length > 0) {
       const eventImageFile = req.files.eventImage[0];
 
-      // Validate file type
-      const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedMimeTypes.includes(eventImageFile.mimetype)) {
-        return sendError(res, "Invalid file type. Only JPEG, JPG, PNG, GIF, and WebP images are allowed", 400);
-      }
-
-      // Validate file size (max 5MB)
+      const allowedMimeTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+      ];
       const maxSize = 5 * 1024 * 1024;
-      if (eventImageFile.size > maxSize) {
-        return sendError(res, "File size too large. Maximum size is 5MB", 400);
+
+      if (!allowedMimeTypes.includes(eventImageFile.mimetype)) {
+        return sendError(
+          res,
+          "Invalid file type. Only JPEG, JPG, PNG, GIF, and WebP allowed",
+          400
+        );
       }
 
-      // Delete old image from S3 first
+      if (eventImageFile.size > maxSize) {
+        return sendError(res, "File too large. Max 5MB allowed", 400);
+      }
+
+      // ✅ Delete old image
       if (existingEvent.eventImage) {
         try {
-          const imageUrl = existingEvent.eventImage;
-          const key = imageUrl.split(".amazonaws.com/")[1];
+          const key = existingEvent.eventImage.split(".amazonaws.com/")[1];
           await deleteFromS3(key);
-          log.info(`Old event image deleted from S3: ${existingEvent.eventImage}`);
-        } catch (deleteError) {
-          log.warn(`Failed to delete old event image: ${deleteError.message}`);
+          log.info(`Old event image deleted from S3: ${key}`);
+        } catch (err) {
+          log.warn(`Failed to delete old event image: ${err.message}`);
         }
       }
 
-      try {
-        const newEventImageUrl = await uploadToS3(
-          eventImageFile.buffer,
-          eventImageFile.originalname,
-          eventImageFile.mimetype,
-          "events"
-        );
-        updateData.eventImage = newEventImageUrl;
-        log.info(`New event image uploaded to S3: ${newEventImageUrl}`);
-      } catch (uploadError) {
-        log.error(`S3 Upload failed: ${uploadError.message}`);
-        return sendError(res, "Failed to upload new event image", uploadError);
-      }
+      // ✅ Upload new image
+      const newImageUrl = await uploadToS3(
+        eventImageFile.buffer,
+        eventImageFile.originalname,
+        eventImageFile.mimetype,
+        "events"
+      );
+      updateData.eventImage = newImageUrl;
+      log.info(`New event image uploaded: ${newImageUrl}`);
     }
 
-    Object.keys(updateData).forEach(key => {
-      if (updateData[key] === undefined) {
-        delete updateData[key];
-      }
+    // ✅ Clean undefined fields
+    Object.keys(updateData).forEach((key) => {
+      if (updateData[key] === undefined) delete updateData[key];
     });
 
-    // Add updated timestamp
+    // ✅ Add updated timestamp
     updateData.updatedAt = new Date();
 
-    const updatedEvent = await eventModel.findByIdAndUpdate(
-      id,
+    // ✅ Update event
+    const updatedEvent = await eventModel.findOneAndUpdate(
+      { _id: eventObjectId, adminId: adminObjectId },
       updateData,
       { new: true, runValidators: true }
     );
@@ -283,11 +299,11 @@ export const updateEvent = async (req, res) => {
       return sendError(res, "Event not found after update", 404);
     }
 
-    log.info(`Event updated: ${id} by admin: ${adminId}`);
+    log.info(`Event updated successfully: ${updatedEvent._id}`);
     return sendSuccess(res, "Event updated successfully", updatedEvent);
   } catch (error) {
-    log.error(`Error While Updating Event: ${error.message}`);
-    return sendError(res, "Error While Updating Event", error);
+    log.error(`Error while updating event: ${error.message}`);
+    return sendError(res, "Error while updating event", error.message);
   }
 };
 

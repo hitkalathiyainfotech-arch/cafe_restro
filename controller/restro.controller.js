@@ -7,6 +7,9 @@ import { sendBadRequest, sendError, sendSuccess } from "../utils/responseUtils.j
 import { sendNotification } from "../utils/notificatoin.utils.js";
 
 export const createNewRestaurant = async (req, res) => {
+  // Track uploaded images for cleanup on error
+  const uploadedImages = { featured: null, gallery: [], menu: [] };
+
   try {
     const {
       name,
@@ -31,15 +34,7 @@ export const createNewRestaurant = async (req, res) => {
     if (!averageCostForTwo) return sendBadRequest(res, "Average cost for two is required");
     if (!address) return sendBadRequest(res, "Address is required");
 
-    // Check for duplicate restaurant BEFORE uploading images
-    const parsedAddress = typeof address === "string" ? JSON.parse(address) : address;
-    const existingRestaurant = await restroModel.findOne({
-      name: name.trim(),
-      "address.street": parsedAddress?.street || ""
-    });
-    if (existingRestaurant) {
-      return sendBadRequest(res, "A restaurant with this name and address already exists");
-    }
+    // Note: Duplicate check is done in validateRestroDuplicate middleware BEFORE S3 upload
 
     // ---- File uploads ----
     const featuredFile = req.files?.featured?.[0];
@@ -51,9 +46,10 @@ export const createNewRestaurant = async (req, res) => {
         await resizeImage(featuredFile.buffer, { width: 1280, height: 720 }),
         featuredFile.originalname,
         featuredFile.mimetype,
-        "restro"
+        "restaurants/featured"
       )
       : null;
+    uploadedImages.featured = featuredUrl;
 
     const galleryUrls = await Promise.all(
       galleryFiles.map(async (file) => {
@@ -61,6 +57,7 @@ export const createNewRestaurant = async (req, res) => {
         return await uploadToS3(buffer, file.originalname, file.mimetype, "restaurants/gallery");
       })
     );
+    uploadedImages.gallery = galleryUrls;
 
     const menuUrls = await Promise.all(
       menuFiles.map(async (file) => {
@@ -68,9 +65,11 @@ export const createNewRestaurant = async (req, res) => {
         return await uploadToS3(buffer, file.originalname, file.mimetype, "restaurants/menu");
       })
     );
+    uploadedImages.menu = menuUrls;
 
     // ---- Parse JSON-like fields ----
     const parsed = (v, fallback = []) => (typeof v === "string" ? JSON.parse(v) : v || fallback);
+    const parsedAddress = typeof address === "string" ? JSON.parse(address) : address;
     const parsedContact = typeof contact === "string" ? JSON.parse(contact) : contact;
     const parsedOperatingHours = typeof operatingHours === "string" ? JSON.parse(operatingHours) : operatingHours;
     const parsedTableGroups = parsed(tableGroups).map((group) => ({
@@ -80,6 +79,34 @@ export const createNewRestaurant = async (req, res) => {
         isBooked: false,
       })),
     }));
+
+    // Validate payment methods
+    const validPaymentMethods = ["Cash", "Credit Card", "Debit Card", "UPI", "Digital Wallet"];
+    const parsedPaymentMethods = parsed(paymentMethods);
+    if (parsedPaymentMethods.length > 0) {
+      const invalidPayments = parsedPaymentMethods.filter(
+        (method) => !validPaymentMethods.includes(method)
+      );
+      if (invalidPayments.length > 0) {
+        // Delete uploaded images if validation fails
+        if (featuredUrl) {
+          const key = featuredUrl.split(".amazonaws.com/")[1];
+          if (key) await deleteFromS3(key).catch(() => { });
+        }
+        if (galleryUrls.length > 0) {
+          const keys = galleryUrls.map(url => url.split(".amazonaws.com/")[1]).filter(Boolean);
+          await Promise.allSettled(keys.map(key => deleteFromS3(key)));
+        }
+        if (menuUrls.length > 0) {
+          const keys = menuUrls.map(url => url.split(".amazonaws.com/")[1]).filter(Boolean);
+          await Promise.allSettled(keys.map(key => deleteFromS3(key)));
+        }
+        return sendBadRequest(
+          res,
+          `Invalid payment method(s): ${invalidPayments.join(", ")}. Allowed values: ${validPaymentMethods.join(", ")}`
+        );
+      }
+    }
 
     // ---- Create restaurant ----
     const restaurant = new restroModel({
@@ -94,7 +121,7 @@ export const createNewRestaurant = async (req, res) => {
       operatingHours: parsedOperatingHours,
       amenities: parsed(amenities),
       services: parsed(services),
-      paymentMethods: parsed(paymentMethods),
+      paymentMethods: parsedPaymentMethods,
       socialMedia: parsed(socialMedia, {}),
       isPopular: !!isPopular,
       isVerified: !!isVerified,
@@ -113,12 +140,37 @@ export const createNewRestaurant = async (req, res) => {
       ).catch(err => log.warn("Failed to update admin restro:", err.message));
     }
 
-    await sendNotification({ adminId: restaurant.ownerId, title: `New Restro Created ${restaurant.name}`, description: `new create restrop description`, image: images.featured, type: "broadcast" })
+    await sendNotification({
+      adminId: restaurant.ownerId,
+      title: `New Restro Created: ${restaurant.name}`,
+      description: `Restaurant created successfully with ${restaurant.images.gallery.length} gallery images and ${restaurant.tableGroups.length} table groups.`,
+      image: restaurant.images.featured || null,
+      type: "broadcast"
+    }).catch(err => log.warn("Notification Error:", err.message));
 
     log.success(`Restaurant created: ${restaurant.name}`);
     return sendSuccess(res, "Restaurant created successfully", restaurant);
   } catch (error) {
     log.error(`createNewRestaurant Error: ${error.message}`);
+
+    // Clean up uploaded images on error
+    try {
+      if (uploadedImages.featured) {
+        const key = uploadedImages.featured.split(".amazonaws.com/")[1];
+        if (key) await deleteFromS3(key).catch(() => { });
+      }
+      if (uploadedImages.gallery.length > 0) {
+        const keys = uploadedImages.gallery.map(url => url.split(".amazonaws.com/")[1]).filter(Boolean);
+        await Promise.allSettled(keys.map(key => deleteFromS3(key)));
+      }
+      if (uploadedImages.menu.length > 0) {
+        const keys = uploadedImages.menu.map(url => url.split(".amazonaws.com/")[1]).filter(Boolean);
+        await Promise.allSettled(keys.map(key => deleteFromS3(key)));
+      }
+    } catch (cleanupError) {
+      log.warn("Failed to cleanup images on error:", cleanupError.message);
+    }
+
     return sendError(res, 500, "Failed to create restaurant", error.message);
   }
 };
@@ -207,6 +259,7 @@ export const getAllRestos = async (req, res) => {
     const total = await restroModel.countDocuments(filter);
 
     return sendSuccess(res, "Restaurants fetched successfully", {
+      total: restaurants.length,
       restaurants,
       pagination: {
         currentPage: parseInt(page),
@@ -328,7 +381,7 @@ export const searchRestaurants = async (req, res) => {
     const filter = { status: "active" };
 
     if (name) {
-      filter.name = { $regex: name, $options: "i" }; // Case-insensitive search
+      filter.name = { $regex: name, $options: "i" };
     }
     if (city) filter["address.city"] = { $regex: city, $options: "i" };
     if (cuisine) filter.cuisineTypes = { $in: [new RegExp(cuisine, "i")] };
@@ -369,7 +422,12 @@ export const updateRestaurant = async (req, res) => {
 
     // Replace featured image
     if (featuredFile) {
-      if (featuredUrl) await deleteFromS3(featuredUrl); // delete old featured
+      if (featuredUrl) {
+        const oldKey = featuredUrl.split(".amazonaws.com/")[1];
+        if (oldKey) {
+          await deleteFromS3(oldKey).catch(err => log.warn("Failed to delete old featured image:", err.message));
+        }
+      }
       featuredUrl = await uploadToS3(
         await resizeImage(featuredFile.buffer, { width: 1280, height: 720 }),
         featuredFile.originalname,
@@ -380,9 +438,9 @@ export const updateRestaurant = async (req, res) => {
 
     // Replace gallery images
     if (galleryFiles.length > 0) {
-      for (const url of galleryUrls) {
-        await deleteFromS3(url); // delete old gallery images
-      }
+      const oldGalleryKeys = galleryUrls.map(url => url.split(".amazonaws.com/")[1]).filter(Boolean);
+      await Promise.allSettled(oldGalleryKeys.map(key => deleteFromS3(key)));
+
       const uploads = await Promise.all(
         galleryFiles.map(async (file) => {
           const buffer = await resizeImage(file.buffer, { width: 1024, height: 768 });
@@ -394,9 +452,9 @@ export const updateRestaurant = async (req, res) => {
 
     // Replace menu images
     if (menuFiles.length > 0) {
-      for (const url of menuUrls) {
-        await deleteFromS3(url); // delete old menu images
-      }
+      const oldMenuKeys = menuUrls.map(url => url.split(".amazonaws.com/")[1]).filter(Boolean);
+      await Promise.allSettled(oldMenuKeys.map(key => deleteFromS3(key)));
+
       const uploads = await Promise.all(
         menuFiles.map(async (file) => {
           const buffer = await resizeImage(file.buffer, { width: 1024, height: 768 });
@@ -420,7 +478,17 @@ export const updateRestaurant = async (req, res) => {
     };
 
     const updated = await restroModel.findByIdAndUpdate(id, updateData, { new: true });
-    return sendSuccess(res, "Restaurant updated successfully", updated);
+    return sendSuccess(res, "Restaurant updated successfully", {
+      total: updated.length,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalRestaurants: total,
+        hasNext: page * limit < total,
+        hasPrev: page > 1
+      },
+      updated,
+    });
   } catch (error) {
     log.error(`updateRestaurant Error: ${error.message}`);
     return sendError(res, 500, "Failed to update restaurant", error.message);
@@ -463,7 +531,6 @@ export const deleteRestaurant = async (req, res) => {
     const restaurant = await restroModel.findById(id);
     if (!restaurant) return sendBadRequest(res, "Restaurant not found");
 
-    // ✅ Remove restaurant ID from admin model before deleting
     if (restaurant.ownerId) {
       await adminModel.findByIdAndUpdate(
         restaurant.ownerId,
@@ -474,13 +541,11 @@ export const deleteRestaurant = async (req, res) => {
 
     const imagesToDelete = [];
 
-    // Featured image
     if (restaurant.images.featured) {
       const key = restaurant.images.featured.split(".amazonaws.com/")[1];
       if (key) imagesToDelete.push(key);
     }
 
-    // Gallery images
     if (Array.isArray(restaurant.images.gallery) && restaurant.images.gallery.length > 0) {
       restaurant.images.gallery.forEach((url) => {
         const key = url.split(".amazonaws.com/")[1];
@@ -488,7 +553,6 @@ export const deleteRestaurant = async (req, res) => {
       });
     }
 
-    // Menu images
     if (Array.isArray(restaurant.images.menu) && restaurant.images.menu.length > 0) {
       restaurant.images.menu.forEach((url) => {
         const key = url.split(".amazonaws.com/")[1];
@@ -496,12 +560,12 @@ export const deleteRestaurant = async (req, res) => {
       });
     }
 
-    // Delete all images from S3
+
     if (imagesToDelete.length > 0) {
       await Promise.allSettled(imagesToDelete.map((key) => deleteFromS3(key)));
     }
 
-    // Delete restaurant from DB
+
     await restaurant.deleteOne();
 
     log.info(`Deleted restaurant: ${id}`);

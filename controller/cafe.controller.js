@@ -536,7 +536,6 @@ export const deleteCafe = async (req, res) => {
       });
     }
 
-    // ✅ Remove cafe ID from admin model before deleting
     if (cafe.createdBy) {
       await adminModel.findByIdAndUpdate(
         cafe.createdBy,
@@ -554,7 +553,7 @@ export const deleteCafe = async (req, res) => {
 
     if (Array.isArray(cafe.images) && cafe.images.length > 0) {
       cafe.images.forEach((imgUrl) => {
-        const key = imgUrl.split(".amazonaws.com/")[1];
+        const key = imgUrl.split(".amazonaws.com/")[1]; 
         if (key) imagesToDelete.push(key);
       });
     }

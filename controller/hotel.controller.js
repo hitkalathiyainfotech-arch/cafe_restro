@@ -48,7 +48,6 @@ export const createNewHotel = async (req, res) => {
       });
     }
 
-    // ✅ Parse JSON fields
     const parsedAddress = typeof address === "string" ? JSON.parse(address) : address || {};
     const parsedLocation = typeof location === "string" ? JSON.parse(location) : location || {};
     const parsedAmenities = typeof amenities === "string" ? JSON.parse(amenities) : amenities || [];
@@ -134,7 +133,6 @@ export const deleteHotels = async (req, res) => {
     const hotel = await hotelModel.findById(hotelId);
     if (!hotel) return sendError(res, 404, "Hotel not found or already deleted");
 
-    // ✅ Collect all images to delete from S3
     const imagesToDelete = [];
 
     // Delete hotel main images
@@ -157,7 +155,6 @@ export const deleteHotels = async (req, res) => {
       });
     }
 
-    // ✅ Delete all images from S3
     if (imagesToDelete.length > 0) {
       await Promise.allSettled(
         imagesToDelete.map((key) => deleteFromS3(key))
@@ -165,7 +162,6 @@ export const deleteHotels = async (req, res) => {
       log.info(`Deleted ${imagesToDelete.length} images from S3 for hotel: ${hotelId}`);
     }
 
-    // ✅ Remove hotel ID from admin model before deleting
     if (hotel.adminId) {
       await adminModel.findByIdAndUpdate(
         hotel.adminId,
@@ -174,7 +170,6 @@ export const deleteHotels = async (req, res) => {
       ).catch(err => log.warn("Failed to remove hotel from admin:", err.message));
     }
 
-    // ✅ Delete hotel from database
     await hotelModel.findByIdAndDelete(hotelId);
 
     return sendSuccess(res, "Hotel deleted successfully", hotel);
@@ -393,3 +388,47 @@ export const getCitySuggestions = async (req, res) => {
     });
   }
 };
+export const searchHotels = async (req, res) => {
+  try {
+    const { keyword } = req.query;
+
+    if (!keyword || keyword.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a search keyword",
+      });
+    }
+
+    const searchCondition = {
+      $or: [
+        { name: { $regex: keyword, $options: "i" } },
+        { city: { $regex: keyword, $options: "i" } },
+        { state: { $regex: keyword, $options: "i" } },
+        { address: { $regex: keyword, $options: "i" } },
+      ],
+    };
+
+    const hotels = await hotelModel.find(searchCondition);
+
+    if (hotels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No hotels found matching your search",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${hotels.length} hotels found`,
+      data: hotels,
+    });
+  } catch (error) {
+    console.error(`Error while searching hotels: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      message: "Error while searching hotels",
+      error: error.message,
+    });
+  }
+};
+

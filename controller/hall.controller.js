@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { resizeImage, uploadToS3 } from "../middleware/uploadS3.js";
+import { resizeImage, uploadToS3, deleteFromS3 } from "../middleware/uploadS3.js";
 import hallModel from "../model/hall.model.js";
 import adminModel from "../model/admin.model.js";
 import userModel from "../model/user.model.js";
@@ -295,7 +295,10 @@ export const updateHall = async (req, res) => {
     if (featuredFile) {
       // Delete old featured image
       if (hall.images.featuredImage) {
-        await deleteFromS3(hall.images.featuredImage);
+        const oldImageKey = hall.images.featuredImage.split(".amazonaws.com/")[1];
+        if (oldImageKey) {
+          await deleteFromS3(oldImageKey).catch(err => log.warn("Failed to delete old featured image:", err.message));
+        }
       }
 
       hall.images.featuredImage = await uploadToS3(
@@ -391,15 +394,27 @@ export const deleteHall = async (req, res) => {
       ).catch(err => log.warn("Failed to remove hall from admin:", err.message));
     }
 
-    // Delete images from S3
+    // Collect all images to delete from S3
+    const imagesToDelete = [];
+
+    // Featured image
     if (hall.images.featuredImage) {
-      await deleteFromS3(hall.images.featuredImage);
+      const key = hall.images.featuredImage.split(".amazonaws.com/")[1];
+      if (key) imagesToDelete.push(key);
     }
 
-    if (hall.images.galleryImages.length > 0) {
-      await Promise.all(
-        hall.images.galleryImages.map(url => deleteFromS3(url))
-      );
+    // Gallery images
+    if (Array.isArray(hall.images.galleryImages) && hall.images.galleryImages.length > 0) {
+      hall.images.galleryImages.forEach((url) => {
+        const key = url.split(".amazonaws.com/")[1];
+        if (key) imagesToDelete.push(key);
+      });
+    }
+
+    // Delete all images from S3
+    if (imagesToDelete.length > 0) {
+      await Promise.allSettled(imagesToDelete.map((key) => deleteFromS3(key)));
+      log.info(`Deleted ${imagesToDelete.length} images from S3 for hall: ${req.params.id}`);
     }
 
     await hallModel.findByIdAndDelete(req.params.id);
@@ -449,7 +464,10 @@ export const deleteGalleryImage = async (req, res) => {
 
     // Delete image from S3
     const imageUrl = hall.images.galleryImages[index];
-    await deleteFromS3(imageUrl);
+    const key = imageUrl.split(".amazonaws.com/")[1];
+    if (key) {
+      await deleteFromS3(key).catch(err => log.warn("Failed to delete gallery image from S3:", err.message));
+    }
 
     // Remove from array
     hall.images.galleryImages.splice(index, 1);
