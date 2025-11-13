@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { sendBadRequest, sendSuccess, sendError } from "../utils/responseUtils.js";
 import log from "../utils/logger.js";
 import { sendNotification } from "../utils/notificatoin.utils.js";
+import hotelBookingModel from "../model/hotel.booking.model.js";
 
 export const createNewHotel = async (req, res) => {
   try {
@@ -388,6 +389,7 @@ export const getCitySuggestions = async (req, res) => {
     });
   }
 };
+
 export const searchHotels = async (req, res) => {
   try {
     const { keyword } = req.query;
@@ -428,6 +430,67 @@ export const searchHotels = async (req, res) => {
       success: false,
       message: "Error while searching hotels",
       error: error.message,
+    });
+  }
+};
+
+const parseDate = (dateStr) => {
+  const [day, month, year] = dateStr.split("-");
+  return new Date(`${year}-${month}-${day}`);
+};
+
+export const mainSearchHotels = async (req, res) => {
+  try {
+    const { city, checkInDate, checkOutDate, adults, children, rooms } = req.query;
+
+    if (!city || !checkInDate || !checkOutDate) {
+      return res.status(400).json({
+        success: false,
+        message: "City, check-in date, and check-out date are required.",
+      });
+    }
+
+    const checkIn = parseDate(checkInDate);
+    const checkOut = parseDate(checkOutDate);
+
+    if (checkOut <= checkIn) {
+      return res.status(400).json({
+        success: false,
+        message: "Check-out date must be after check-in date.",
+      });
+    }
+
+    const overlappingBookings = await hotelBookingModel.find({
+      $and: [
+        { "bookingDates.checkInDate": { $lt: checkOut } },
+        { "bookingDates.checkOutDate": { $gt: checkIn } },
+        { bookingStatus: { $in: ["pending", "upcoming", "completed"] } },
+      ],
+    }).distinct("hotelId");
+
+    const query = {
+      "address.city": { $regex: new RegExp(city, "i") },
+      _id: { $nin: overlappingBookings },
+    };
+
+    if (adults) query["rooms.maxGuests"] = { $gte: Number(adults) };
+    if (rooms) query["rooms"] = { $exists: true, $not: { $size: 0 } };
+
+    const hotels = await hotelModel.find(query)
+      .select("name description address images priceRange averageRating amenities rooms")
+      .limit(20) // avoid heavy response
+      .lean(); // better performance
+
+    return res.status(200).json({
+      success: true,
+      message: hotels.length ? "Hotels fetched successfully." : "No hotels available.",
+      result: hotels,
+    });
+  } catch (error) {
+    console.error("Hotel Search Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error.",
     });
   }
 };

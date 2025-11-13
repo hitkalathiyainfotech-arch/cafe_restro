@@ -5,6 +5,7 @@ import adminModel from "../model/admin.model.js";
 import { sendNotification } from "../utils/notificatoin.utils.js";
 import log from "../utils/logger.js";
 import { sendNotFound } from '../utils/responseUtils.js'
+import cafeBookingModel from "../model/cafe.booking.model.js";
 
 export const createNewCafe = async (req, res) => {
   try {
@@ -553,7 +554,7 @@ export const deleteCafe = async (req, res) => {
 
     if (Array.isArray(cafe.images) && cafe.images.length > 0) {
       cafe.images.forEach((imgUrl) => {
-        const key = imgUrl.split(".amazonaws.com/")[1]; 
+        const key = imgUrl.split(".amazonaws.com/")[1];
         if (key) imagesToDelete.push(key);
       });
     }
@@ -714,6 +715,97 @@ export const searchCafes = async (req, res) => {
       success: false,
       message: "Server Error",
       error: error.message
+    });
+  }
+};
+
+const parseDate = (dateStr) => {
+  const [day, month, year] = dateStr.split("-");
+  return new Date(`${year}-${month}-${day}`);
+};
+
+export const mainSearchCafes = async (req, res) => {
+  try {
+    const {
+      city,
+      date,
+      time,
+      people,
+      sortBy,
+      priceMin,
+      priceMax,
+      rating,
+      propertyType,
+      offer,
+    } = req.query;
+
+    if (!city || !date || !time) {
+      return res.status(400).json({
+        success: false,
+        message: "City, date, and time are required fields.",
+      });
+    }
+
+    const bookingDate = parseDate(date);
+
+    const bookedCafes = await cafeBookingModel.find({
+      bookingDate,
+      timeSlot: time,
+    }).distinct("cafeId");
+
+    const query = {
+      "location.city": { $regex: new RegExp(city, "i") },
+      _id: { $nin: bookedCafes },
+      status: "active",
+    };
+
+    if (people) query["pricing.averagePrice"] = { $exists: true };
+    if (rating) query["averageRating"] = { $gte: Number(rating) };
+    if (propertyType)
+      query["themeCategory.name"] = { $regex: new RegExp(propertyType, "i") };
+
+    if (priceMin || priceMax) {
+      query["pricing.averagePrice"] = {};
+      if (priceMin) query["pricing.averagePrice"].$gte = Number(priceMin);
+      if (priceMax) query["pricing.averagePrice"].$lte = Number(priceMax);
+    }
+
+    const sortOptions = {};
+    switch (sortBy) {
+      case "rating":
+        sortOptions.averageRating = -1;
+        break;
+      case "price":
+        sortOptions["pricing.averagePrice"] = 1;
+        break;
+      case "popular":
+        sortOptions.popular = -1;
+        break;
+      default:
+        sortOptions.createdAt = -1;
+    }
+
+    const cafes = await cafeModel
+      .find(query)
+      .sort(sortOptions)
+      .limit(20)
+      .select(
+        "name description images averageRating pricing themeCategory location amenities popular"
+      )
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: cafes.length
+        ? "Cafés fetched successfully."
+        : "No cafés available for selected time and filters.",
+      result: cafes,
+    });
+  } catch (error) {
+    console.error("Error searching cafés:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
     });
   }
 };

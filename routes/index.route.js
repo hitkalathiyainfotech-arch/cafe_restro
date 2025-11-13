@@ -3,21 +3,21 @@ import { ForgotOtpSend, ResetPassword, VerifyOtp, changeUserPassword, deleteUser
 import { UserAuth } from '../middleware/UserAuth.js';
 import { adminLogin, adminUpdate, deleteAdmin, getAdminById, getAllAdmins, newAdminRegister } from '../controller/admin.controller.js';
 import { AdminAuth } from '../middleware/AdminAuth.js';
-import { createNewHotel, deleteHotels, getAllHotels, getCitySuggestions, getHotelByCityName, getHotelById, searchHotels } from '../controller/hotel.controller.js';
+import { createNewHotel, deleteHotels, getAllHotels, getCitySuggestions, getHotelByCityName, getHotelById, mainSearchHotels, searchHotels } from '../controller/hotel.controller.js';
 import { handleMulterErrors, processAndUploadImages, uploadFiles } from '../middleware/multer.middleware.js';
 import { validateHotelDuplicate } from '../middleware/validateHotelDuplicate.js';
 import { createBooking, getMyHotelBookings, hotelAdminBookings, previewHotelBooking, updateHotelBookingStatus, updateHotelPaymentStatus, } from '../controller/hotel.booking.controller.js';
 import { deleteFromS3, listAllS3Images, upload } from '../middleware/uploadS3.js';
 import log from '../utils/logger.js'
 import { addToWatchlist, getMyWatchlist, removeWatchlistItem } from '../controller/watchlist.controller.js';
-import { addCafeImages, cafeThemes, createNewCafe, deleteCafe, getAllCafes, getCafeById, getCafesByLocation, getCafesByTheme, getPopularCafes, removeCafeImage, searchCafes, updateCafe } from '../controller/cafe.controller.js';
+import { addCafeImages, cafeThemes, createNewCafe, deleteCafe, getAllCafes, getCafeById, getCafesByLocation, getCafesByTheme, getPopularCafes, mainSearchCafes, removeCafeImage, searchCafes, updateCafe } from '../controller/cafe.controller.js';
 import { cancelBooking, createCafeBooking, getAvailableTimeSlots, getBookingById, getCafeBookings, getUserBookings, previewCafeBooking, updateBookingStatus, updatePaymentStatus } from '../controller/cafe.booking.controller.js';
 import { createNewRestaurant, deleteRestaurant, filterRestaurants, getAllRestos, getAvailableRestoTimeSlots, getAvailableTables, getSingleRestro, resetAllTables, restroChangeStatus, searchRestaurants, updateRestaurant } from '../controller/restro.controller.js';
 import { validateRestroDuplicate } from '../middleware/validateRestroDuplicate.js';
 import { sendBadRequest, sendError, sendSuccess } from '../utils/responseUtils.js';
 import { bestPlaceByCity, bestPlaceByCityBasic, getAllCountries, getCityByCountry, getHotelByCity, getPlaceDeatil } from '../controller/activity.controller.js';
 import { addReview, deleteReview, getAllReviews, getBusinessReviews, getUserReviews, updateReview } from '../controller/review.controller.js';
-import { cancelMyRestroBooking, checkInGuest, checkOutGuest, createRestaurantBooking, getBookingStatistics, getRestaurantBookingById, getRestaurantBookings, getUserRestaurantBookings, updateRestaurantBookingStatus, updateRestaurantPaymentStatus,previewRestroBooking } from '../controller/restro.booking.controller.js';
+import { cancelMyRestroBooking, checkInGuest, checkOutGuest, createRestaurantBooking, getBookingStatistics, getRestaurantBookingById, getRestaurantBookings, getUserRestaurantBookings, updateRestaurantBookingStatus, updateRestaurantPaymentStatus, previewRestroBooking } from '../controller/restro.booking.controller.js';
 import { createHall, deleteGalleryImage, deleteHall, getAllHalls, getHallById, getPopularHalls, getPreviewBillingOfHall, updateHall } from '../controller/hall.controller.js';
 import { cancelHallBooking, createHallBooking, getHallBookingById, getUserHallBookings } from '../controller/hall.booking.controller.js';
 import { addNewEvent, bulkDeleteEvents, deleteEvent, getAllEvents, getEventById, getEventStats, updateEvent } from '../controller/event.controller.js';
@@ -96,6 +96,7 @@ indexRouter.get("/getCafesByTheme", getCafesByTheme);
 //cafe booking & list section
 indexRouter.get("/getAllCafes", getAllCafes);
 indexRouter.get("/search", searchCafes);
+indexRouter.get("/mainSearchCafes", mainSearchCafes);
 indexRouter.get("/location", getCafesByLocation);
 indexRouter.get("/popular", getPopularCafes);
 indexRouter.get("/getCafeById/:id", getCafeById);
@@ -148,7 +149,7 @@ indexRouter.get("/restro/changeStatus/:id", AdminAuth, restroChangeStatus);
 indexRouter.post("/resetAllTables/:restroId", resetAllTables)
 // restro booking
 // user side
-indexRouter.get("/previewRestroBooking/:restaurantId",previewRestroBooking)
+indexRouter.get("/previewRestroBooking/:restaurantId", previewRestroBooking)
 indexRouter.post("/createRestroBooking/:restaurantId", UserAuth, createRestaurantBooking);
 indexRouter.get("/restro/my-bookings", UserAuth, getUserRestaurantBookings);
 indexRouter.patch("/updateRestroPaymentStatus/:bookingId/payment", UserAuth, updateRestaurantPaymentStatus);
@@ -195,7 +196,7 @@ indexRouter.get("/bestPlaceByCityBasic/:cityName", bestPlaceByCityBasic);
 indexRouter.get("/getPlaceDeatil/:placeName", getPlaceDeatil)
 indexRouter.get("/getHotelByCity/:city", getHotelByCity)
 indexRouter.get("/searchHotels", searchHotels)
-
+indexRouter.get("/mainSearchHotels", mainSearchHotels)
 // event routes
 //admin side
 indexRouter.get("/getAllEvents", getAllEvents);
