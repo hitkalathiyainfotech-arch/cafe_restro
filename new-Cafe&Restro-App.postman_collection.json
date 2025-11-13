@@ -590,12 +590,12 @@
 								},
 								{
 									"key": "name",
-									"value": "Dhameliya Hotel",
+									"value": "add Hotel After deploy",
 									"type": "text"
 								},
 								{
 									"key": "description",
-									"value": "A luxurious hotel with modern amenities and beautiful city views. HD",
+									"value": "add Hotel After deploy des",
 									"type": "text"
 								},
 								{
@@ -676,7 +676,7 @@
 								{
 									"key": "roomImages-1",
 									"type": "file",
-									"src": "/C:/Users/Admin/Downloads/vojtech-bruzek-Yrxr3bsPdS0-unsplash.jpg"
+									"src": "/C:/Users/Admin/Downloads/visualsofdana-T5pL6ciEn-I-unsplash.jpg"
 								},
 								{
 									"key": "rooms[2][type]",
@@ -696,7 +696,7 @@
 								{
 									"key": "roomImages-2",
 									"type": "file",
-									"src": "/C:/Users/Admin/Downloads/trac-vu-vi59jclwSko-unsplash.jpg"
+									"src": "/C:/Users/Admin/Downloads/vojtech-bruzek-Yrxr3bsPdS0-unsplash.jpg"
 								}
 							]
 						},
@@ -837,6 +837,41 @@
 								{
 									"key": "keyword",
 									"value": ""
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "mainSearchHotels",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/mainSearchHotels?city=Surat&checkInDate=15-11-2025&checkOutDate=16-11-2025&adults=2",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"mainSearchHotels"
+							],
+							"query": [
+								{
+									"key": "city",
+									"value": "Surat"
+								},
+								{
+									"key": "checkInDate",
+									"value": "15-11-2025"
+								},
+								{
+									"key": "checkOutDate",
+									"value": "16-11-2025"
+								},
+								{
+									"key": "adults",
+									"value": "2"
 								}
 							]
 						}
@@ -1402,6 +1437,41 @@
 								{
 									"key": "theme",
 									"value": "Cazy"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "mainSearchCafes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/mainSearchCafes?city=Surat&date=07-08-2025&time=12:00&people=8",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"mainSearchCafes"
+							],
+							"query": [
+								{
+									"key": "city",
+									"value": "Surat"
+								},
+								{
+									"key": "date",
+									"value": "07-08-2025"
+								},
+								{
+									"key": "time",
+									"value": "12:00"
+								},
+								{
+									"key": "people",
+									"value": "8"
 								}
 							]
 						}
@@ -3140,7 +3210,7 @@
 								{
 									"key": "stayImage",
 									"type": "file",
-									"src": "/C:/Users/Admin/Downloads/olexandr-ignatov-w72a24brINI-unsplash.jpg"
+									"src": "/C:/Users/Admin/Downloads/trac-vu-vi59jclwSko-unsplash.jpg"
 								}
 							]
 						},
@@ -3210,13 +3280,13 @@
 						"method": "DELETE",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/deleteStay/690dbf296fe9cffb9cefb272",
+							"raw": "{{base_url}}/deleteStay/690de41ef3289a872630eeaa",
 							"host": [
 								"{{base_url}}"
 							],
 							"path": [
 								"deleteStay",
-								"690dbf296fe9cffb9cefb272"
+								"690de41ef3289a872630eeaa"
 							]
 						}
 					},
